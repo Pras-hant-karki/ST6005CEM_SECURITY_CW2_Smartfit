@@ -5,7 +5,7 @@ import path from "path"
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
-  const apiTarget = env.VITE_PROXY_API_TARGET || "http://localhost:5000"
+  const apiTarget = env.VITE_PROXY_API_TARGET || "http://localhost:8000"
 
   return {
     plugins: [
