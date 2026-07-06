@@ -4,13 +4,15 @@ import { apiResponse } from "../utils/apiResponse.js";
 import { apiError } from "../utils/apiError.js";
 import generateOtp from "../utils/otpgenerator.js";
 import { saveOTP, getOTP, clearOTP } from "../services/otp.js";
+import { Patient } from "../models/patient.model.js";
+import { Doctor } from "../models/doctor.model.js";
 import { forgetpasswordotptemplate, otpTemplate } from "../utils/emailtemplate.js";
 import jwt from "jsonwebtoken"
 
 const isProduction = process.env.NODE_ENV === "production";
 
 const sendotp = asyncHandler(async (req, res) => {
-    const email = req.patient?.email ;
+    const email = req.patient?.email || req.doctor?.email || req.admin?.email;
     if (!email) {
         throw new apiError(400, "email is not found from any user or user is not logged in");
     }
@@ -31,7 +33,7 @@ const sendotp = asyncHandler(async (req, res) => {
 
 const verifyotp = asyncHandler(async (req, res) => {
     const { otp } = req.body;
-    const email = req.patient?.email;
+    const email = req.patient?.email || req.doctor?.email || req.admin?.email;
     if (!email) {
         throw new apiError(400, "Email is not found from any user or user is not logged in");
     }
@@ -60,11 +62,13 @@ const sendForgetPasswordOtp = asyncHandler(async (req, res) => {
     }
     const query = email ? { email } : { phonenumber };
     const patient = await Patient.findOne(query);
-    if (!patient) {
+    const doctor = await Doctor.findOne(query);
+    if (!patient && !doctor) {
         throw new apiError(404, "User not found");
     }
     let user = {}
     if (patient) { user.id = patient._id, user.role = "patient", user.email = patient.email }
+    if (doctor) { user.id = doctor._id, user.role = "doctor", user.email = doctor.email }
 
 
     const tempToken = jwt.sign(
