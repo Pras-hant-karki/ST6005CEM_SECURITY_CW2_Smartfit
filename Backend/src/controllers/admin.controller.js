@@ -1,0 +1,321 @@
+import { asyncHandler } from "../utils/asynchandler.js";
+import { Admin } from "../models/admin.model.js";
+import { apiError } from "../utils/apiError.js";
+import { uploadLocal } from "../utils/localUpload.js";
+import { apiResponse } from "../utils/apiResponse.js";
+import sendMail from "../services/mail.js";
+import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
+import jwt from "jsonwebtoken";
+
+const sendAdminMail = async (mailOptions) => {
+    try {
+        await sendMail(mailOptions);
+    } catch (error) {
+        console.error("Admin email notification failed:", error.message);
+    }
+};
+
+const isProduction = process.env.NODE_ENV === "production";
+
+const generateaccesstokenandrefreshtoken = async (adminid) => {
+    try {
+        const admin = await Admin.findById(adminid)
+        const accesstoken = await admin.generateaccesstoken()
+        const refreshtoken = await admin.generaterefreshtoken()
+        if (!accesstoken || !refreshtoken) {
+            throw new apiError(500, "Token generation failed")
+        }
+        admin.refreshtoken = refreshtoken
+        await admin.save({ validateBeforeSave: false })
+        return { accesstoken, refreshtoken }
+    } catch (error) {
+        throw new apiError(500, "Token generation failed")
+    }
+}
+
+const registeradmin = asyncHandler(async (req, res) => {
+    const { adminname, adminusername, email, password, phonenumber } = req.body
+    if ([adminname, adminusername, email, password, phonenumber].some((field) => !field || field?.trim() === "")) {
+        throw new apiError(400, "All fields are required")
+    }
+    const existedadmin = await Admin.findOne({
+        $or: [{ adminusername }, { email }]
+    })
+    if (existedadmin) {
+        throw new apiError(409, "Admin with same email or username already exists")
+    }
+    const citizenshipDocumentLocalPath = req.files?.citizenshipdocument?.[0]?.buffer;
+    const adminIdlocalpath = req.files?.adminId?.[0]?.buffer;
+    const profilepicturelocalpath = req.files?.profilepicture?.[0]?.buffer;
+    const appointmentletterlocalpath = req.files?.appointmentletter?.[0]?.buffer;
+    if (
+        !citizenshipDocumentLocalPath ||
+        !adminIdlocalpath ||
+        !profilepicturelocalpath ||
+        !appointmentletterlocalpath
+    ) {
+        throw new apiError(400, "All files are required");
+    }
+
+    const citizenshipdocument = await uploadLocal(citizenshipDocumentLocalPath,"admin/citizenship-document")
+    const adminId = await uploadLocal(adminIdlocalpath,"admin/admin-id")
+    const profilepicture = await uploadLocal(profilepicturelocalpath,"admin/profile-picture")
+    const appointmentletter = await uploadLocal(appointmentletterlocalpath,"admin/appointment-letter")
+
+    if (!citizenshipdocument || !adminId || !profilepicture || !appointmentletter) {
+        throw new apiError(500, "File upload failed")
+    }
+    const admin = await Admin.create({
+        adminname,
+        adminusername,
+        email,
+        password,
+        phonenumber,
+        verificationdocs: {
+            citizenshipdocument: citizenshipdocument.secure_url,
+            adminId: adminId.secure_url,
+            profilepicture: profilepicture.secure_url,
+            appointmentletter: appointmentletter.secure_url
+        },
+    })
+
+    if (!admin) {
+        throw new apiError(500, "Admin registration failed")
+    }
+
+    const createdAdmin = await Admin.findById(admin._id).select("-password -refreshtoken")
+
+    sendAdminMail({
+        to: email,
+        subject: `Welcome to SmartFit, ${createdAdmin.adminname}! Your Registration is Successful`,
+        html: welcomeemailtemplate(createdAdmin.adminname),
+    })
+
+    return res
+        .status(201)
+        .json(
+            new apiResponse(201, createdAdmin, "Admin registered successfully")
+        );
+
+})
+
+const loginadmin = asyncHandler(async (req, res) => {
+    const { adminusername, email, password } = req.body
+    if (!adminusername && !email) {
+        throw new apiError(400, "Admin username or email is required")
+    }
+    if (!password) {
+        throw new apiError(400, "Password is required")
+    }
+    const existedadmin = await Admin.findOne({
+        $or: [{ adminusername }, { email }]
+    }).select("+password")
+    if (!existedadmin) {
+        throw new apiError(404, "Admin not found")
+    }
+    const ispasswordvalid = await existedadmin.ispasswordcorrect(password)
+    if (!ispasswordvalid) {
+        throw new apiError(401, "Password is not valid")
+    }
+    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(existedadmin._id)
+
+    const loggedinadmin = await Admin.findById(existedadmin._id).select("-password -refreshtoken")
+    if (!loggedinadmin) {
+        throw new apiError(500, "Admin login failed")
+    }
+    sendAdminMail({
+        to: email,
+        subject: `Login Alert – SmartFit Account Accessed Successfully`,
+        html: logintemplate(loggedinadmin.adminname),
+    });
+
+    
+    const options1 = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        path: "/",
+        maxAge: 1 * 24 * 60 * 60 * 1000
+    }
+    const options2 = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        path: "/",
+        maxAge: 20 * 24 * 60 * 60 * 1000
+    }
+    return res
+        .status(200)
+        .cookie("accesstoken", accesstoken, options1)
+        .cookie("refreshtoken", refreshtoken, options2)
+        .json(new apiResponse(200, { user: loggedinadmin, accesstoken, refreshtoken }, "Admin logged in successfully"))
+
+
+})
+const logoutadmin = asyncHandler(async (req, res, next) => {
+    await Admin.findByIdAndUpdate(req.admin?._id, { $unset: { refreshtoken: 1 } }, { new: true }
+    )
+    const options = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        path: "/",
+    }
+    return res
+        .status(200)
+        .clearCookie("accesstoken", options)
+        .clearCookie("refreshtoken", options)
+        .json(new apiResponse(200, {}, "Admin logged out successfully"))
+})
+
+const accesstokenrenewal = asyncHandler(async (req, res) => {
+    const { refreshtoken } = req.cookies || req.body;
+
+    if (!refreshtoken) {
+        throw new apiError(401, "Unauthorized request");
+    }
+    const decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
+    if (!decodetoken) {
+        throw new apiError(401, "invalid refresh token");
+    }
+    if (decodetoken.role !== "admin") {
+        throw new apiError(401, "Admin session required");
+    }
+    const admin = await Admin.findById(decodetoken._id);
+    if (!admin) {
+        throw new apiError(404, "Admin not found");
+    }
+    if (admin.refreshtoken !== refreshtoken) {
+        throw new apiError(401, "Invalid refresh token or token is expired");
+    }
+    const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
+
+
+    const options1 = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        path: "/",
+        maxAge: 1 * 24 * 60 * 60 * 1000
+    }
+    const options2 = {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        path: "/",
+        maxAge: 20 * 24 * 60 * 60 * 1000
+    }
+    return res
+        .status(200)
+        .cookie("accesstoken", accesstoken, options1)
+        .cookie("refreshtoken", newrefreshtoken, options2)
+        .json(new apiResponse(200, { accesstoken, refreshtoken: newrefreshtoken }, "Access token renewed successfully"));
+
+})
+
+const updatepassword = asyncHandler(async (req, res) => {
+    const { oldpassword, newpassword } = req.body;
+
+    if (!oldpassword || !newpassword) {
+        throw new apiError(400, "Old password and new password are required");
+    }
+    if (oldpassword === newpassword) {
+        throw new apiError(400, "New password cannot be the same as old password");
+    }
+    const admin = await Admin.findById(req.admin?._id).select("+password");
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    const ispasswordvalid = await admin.ispasswordcorrect(oldpassword);
+    if (!ispasswordvalid) {
+        throw new apiError(401, "Old password is incorrect");
+    }
+    admin.password = newpassword;
+    await admin.save({ validateBeforeSave: false });
+
+    return res.status(200).json(new apiResponse(200, {}, "Password updated successfully"));
+})
+
+const resetForgottenPassword = asyncHandler(async (req, res) => {
+    const { newpassword } = req.body;
+    if (!newpassword) throw new apiError(400, "New password is required");
+
+    const admin = await Admin.findById(req.user?._id);
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    admin.password = newpassword;
+    await admin.save({ validateBeforeSave: false });
+
+    return res.status(200).json(new apiResponse(200, {}, "Password reset successfully"));
+});
+
+const updateprofile = asyncHandler(async (req, res) => {
+    const { adminname, email, phonenumber } = req.body;
+
+    const updates = {};
+    if (adminname) updates.adminname = adminname;
+    if (email) updates.email = email;
+    if (phonenumber) updates.phonenumber = phonenumber;
+
+    if (Object.keys(updates).length === 0) {
+        throw new apiError(400, "At least one field is required to update");
+    }
+
+    const updatedadmin = await Admin.findByIdAndUpdate(
+        req.admin?._id,
+        { $set: updates },
+        { new: true }
+    ).select("-password -refreshtoken");
+
+    if (!updatedadmin) {
+        throw new apiError(404, "Admin not found");
+    }
+
+    return res
+        .status(200)
+        .json(new apiResponse(200, updatedadmin, "Profile updated successfully"));
+});
+
+const getprofiledetails = asyncHandler(async (req, res) => {
+    const admin = await Admin.findById(req.admin?._id).select(" -password -refreshtoken")
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    return res.status(200)
+        .json(new apiResponse(200, admin, "profile fetched successfully"))
+})
+
+const updateprofilepic = asyncHandler(async (req, res) => {
+    const profilepicturelocalpath = req.file?.buffer
+    if (!profilepicturelocalpath) {
+        throw new apiError(400, "profilepicture not found ")
+    }
+    const profilepicture = await uploadLocal(profilepicturelocalpath,"admin/profile-picture")
+    if (!profilepicture) {
+        throw new apiError(400, "profilepicture upload failed to server")
+    }
+    const updatedadmin = await Admin.findByIdAndUpdate(
+        req.admin?._id,
+        {
+            $set: {
+                "verificationdocs.profilepicture": profilepicture.secure_url || profilepicture.url
+            }
+        },
+        {
+            new: true
+        }).select("-password -refreshtoken")
+
+    if (!updatedadmin) {
+        throw new apiError(404, "Admin not found")
+    }
+
+    res.status(200)
+        .json(new apiResponse(200, updatedadmin, "profilepicture updated successfully"))
+})
+
+const getCurrentAdmin = asyncHandler(async (req, res) => {
+    const admin = await Admin.findById(req.admin?._id).select("-password -refreshtoken");
+    if (!admin) {
+        throw new apiError(404, "Admin not found");
+    }
+    return res.status(200).json(new apiResponse(200, admin, "Current admin fetched successfully"));
+});
+export { registeradmin, loginadmin, logoutadmin, updateprofile, updatepassword, resetForgottenPassword, getprofiledetails, accesstokenrenewal, updateprofilepic, getCurrentAdmin }; 
