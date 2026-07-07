@@ -37,3 +37,23 @@ export const verifyCaptcha = asyncHandler(async (req, res, next) => {
 
     next();
 });
+
+// Standalone token verifier for inline adaptive CAPTCHA in controllers.
+// Throws apiError on failure; no-ops when HCAPTCHA_SECRET_KEY is unset.
+export async function verifyCaptchaToken(token) {
+    const secret = process.env.HCAPTCHA_SECRET_KEY;
+    if (!secret) return;
+    const params = new URLSearchParams({ secret, response: token });
+    let data;
+    try {
+        const r = await fetch(HCAPTCHA_VERIFY_URL, {
+            method: "POST",
+            body: params,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+        data = await r.json();
+    } catch {
+        throw new apiError(503, "CAPTCHA service unavailable. Please try again.");
+    }
+    if (!data.success) throw new apiError(400, "CAPTCHA verification failed. Please try again.");
+}
