@@ -6,6 +6,8 @@ import { apiResponse } from "../utils/apiResponse.js";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
+import { trackAttempt } from "../utils/rateStore.js";
+import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
 import jwt from "jsonwebtoken";
@@ -58,7 +60,17 @@ const generateaccesstokenandrefreshtoken = async (adminId) => {
     return { accesstoken, refreshtoken };
 };
 
+const REG_WINDOW_MS = 10 * 60 * 1000;
+const REG_LIMIT = 5;
+
 const registeradmin = asyncHandler(async (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+    if (trackAttempt(`reg:${clientIp}`, REG_WINDOW_MS, REG_LIMIT)) {
+        const token = req.body["h-captcha-response"];
+        if (!token) return res.status(200).json(new apiResponse(200, { captchaRequired: true }, "Please complete CAPTCHA verification."));
+        await verifyCaptchaToken(token);
+    }
+
     const { adminname, adminusername, email, password, phonenumber } = req.body;
 
     if ([adminname, adminusername, email, password, phonenumber].some((f) => !f || f?.trim() === "")) {
