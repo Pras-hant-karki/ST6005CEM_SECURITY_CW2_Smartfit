@@ -1,5 +1,5 @@
 // Register.jsx - Professional Registration Page with shadcn/ui
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -22,8 +22,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import HCaptcha from "@/components/ui/HCaptcha";
 import { registerPatient } from "@/services/patientApi";
 import { formatErrorMessage } from "../utils/formatError";
+import PasswordStrengthMeter from "@/components/ui/PasswordStrengthMeter";
 import { 
   Loader2, 
   User, 
@@ -48,6 +50,9 @@ const Register = () => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const handleCaptchaVerify = useCallback((token) => setCaptchaToken(token), []);
 
   const {
     register,
@@ -85,14 +90,19 @@ const Register = () => {
     const formData = new FormData();
     const patientusername = makePatientUsername(data.patientname, data.email);
     Object.entries(data).forEach(([key, value]) => {
-      if (key !== "confirmPassword") formData.append(key, value);
+      formData.append(key, value);
     });
     formData.set("patientusername", patientusername);
     if (file) formData.append("profilepicture", file);
+    if (captchaToken) formData.append("h-captcha-response", captchaToken);
 
     try {
       const res = await dispatch(registerPatient(formData));
       if (res.meta.requestStatus === "fulfilled") {
+        if (res.payload?.data?.captchaRequired) {
+          setCaptchaRequired(true);
+          return;
+        }
         toast.success("Registration successful! Welcome to SmartFit");
         navigate("/login");
       } else {
@@ -272,12 +282,16 @@ const Register = () => {
                       id="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="Create a strong password"
-                      {...register("password", { 
+                      {...register("password", {
                         required: "Password is required",
-                        minLength: {
-                          value: 8,
-                          message: "Password must be at least 8 characters"
-                        }
+                        validate: (v) => {
+                          if (!v || v.length < 12) return "Password must be at least 12 characters";
+                          if (!/[A-Z]/.test(v)) return "Password must contain at least one uppercase letter";
+                          if (!/[a-z]/.test(v)) return "Password must contain at least one lowercase letter";
+                          if (!/\d/.test(v)) return "Password must contain at least one number";
+                          if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(v)) return "Password must contain at least one special character";
+                          return true;
+                        },
                       })}
                       className={`${errors.password ? "border-red-500" : ""} pr-12`}
                     />
@@ -289,6 +303,7 @@ const Register = () => {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <PasswordStrengthMeter password={password} />
                   {errors.password && (
                     <p className="text-red-500 text-xs flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
@@ -405,6 +420,10 @@ const Register = () => {
                   </p>
                 </div>
               </div>
+
+              {captchaRequired && (
+                <HCaptcha onVerify={handleCaptchaVerify} />
+              )}
 
               {/* Submit Button */}
               <Button

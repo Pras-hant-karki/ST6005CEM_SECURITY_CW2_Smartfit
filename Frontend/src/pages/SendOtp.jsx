@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import { sendForgotPasswordOtp, sendOtpForUpdate, getCurrentPatient } from "../services/patientApi";
@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import  Input  from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import HCaptcha from "@/components/ui/HCaptcha";
 import { Loader2, Mail, ArrowLeft, AlertCircle, Phone } from "lucide-react";
 import { formatErrorMessage } from "../utils/formatError";
 
@@ -14,6 +15,9 @@ function SendOtp() {
   const navigate = useNavigate();
   const { loading, error, user, isAuthenticated, isInitialized } = useSelector((state) => state.auth);
   const [deliveryMethod, setDeliveryMethod] = useState("email");
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const handleCaptchaVerify = useCallback((token) => setCaptchaToken(token), []);
 
   // Fetch current user on mount to restore state after refresh
   useEffect(() => {
@@ -60,15 +64,21 @@ function SendOtp() {
         return;
       }
 
-      const action = isAuthenticated 
-        ? sendOtpForUpdate(payload) 
+      if (captchaToken) payload["h-captcha-response"] = captchaToken;
+
+      const action = isAuthenticated
+        ? sendOtpForUpdate(payload)
         : sendForgotPasswordOtp(payload);
-      
+
       const result = await dispatch(action);
-      
+
       if (result.meta?.requestStatus === "fulfilled") {
-        navigate("/verify-otp", { 
-          state: { 
+        if (result.payload?.captchaRequired) {
+          setCaptchaRequired(true);
+          return;
+        }
+        navigate("/verify-otp", {
+          state: {
             email,
             phonenumber: payload.phonenumber,
             deliveryMethod,
@@ -213,6 +223,10 @@ function SendOtp() {
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{formatErrorMessage(error, "Failed to send OTP")}</AlertDescription>
             </Alert>
+          )}
+
+          {captchaRequired && (
+            <HCaptcha onVerify={handleCaptchaVerify} />
           )}
 
           <Button
