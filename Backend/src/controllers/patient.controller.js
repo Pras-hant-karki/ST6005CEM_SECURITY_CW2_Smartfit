@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import sendMail from '../services/mail.js';
 import { welcomeemailtemplate, logintemplate } from '../utils/emailtemplate.js';
 import { validatePassword } from '../utils/passwordValidator.js';
+import { trackAttempt } from '../utils/rateStore.js';
+import { verifyCaptchaToken } from '../middlewares/captcha.middleware.js';
 import { saveOTP, verifyOTP, clearOTP } from '../services/otp.js';
 import generateOtp from '../utils/otpgenerator.js';
 import { forgetpasswordotptemplate } from '../utils/emailtemplate.js';
@@ -68,7 +70,17 @@ const checkPasswordHistory = async (plaintext, passwordHistory = []) => {
     return false;
 };
 
+const REG_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const REG_LIMIT = 5;
+
 const registerPatient = asyncHandler(async (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+    if (trackAttempt(`reg:${clientIp}`, REG_WINDOW_MS, REG_LIMIT)) {
+        const token = req.body["h-captcha-response"];
+        if (!token) return res.status(200).json(new apiResponse(200, { captchaRequired: true }, "Please complete CAPTCHA verification."));
+        await verifyCaptchaToken(token);
+    }
+
     const { patientname, patientusername, email, password, confirmPassword, phonenumber, age, sex } = req.body;
 
     if (
