@@ -5,7 +5,11 @@ import { uploadLocal } from "../utils/localUpload.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
+import { validatePassword } from "../utils/passwordValidator.js";
+import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
+import generateOtp from "../utils/otpgenerator.js";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 
 const sendAdminMail = async (mailOptions) => {
     try {
@@ -17,54 +21,74 @@ const sendAdminMail = async (mailOptions) => {
 
 const isProduction = process.env.NODE_ENV === "production";
 
-const generateaccesstokenandrefreshtoken = async (adminid) => {
-    try {
-        const admin = await Admin.findById(adminid)
-        const accesstoken = await admin.generateaccesstoken()
-        const refreshtoken = await admin.generaterefreshtoken()
-        if (!accesstoken || !refreshtoken) {
-            throw new apiError(500, "Token generation failed")
-        }
-        admin.refreshtoken = refreshtoken
-        await admin.save({ validateBeforeSave: false })
-        return { accesstoken, refreshtoken }
-    } catch (error) {
-        throw new apiError(500, "Token generation failed")
-    }
-}
+const ACCESS_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    path: "/",
+    maxAge: 1 * 24 * 60 * 60 * 1000,
+};
+const REFRESH_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    path: "/",
+    maxAge: 20 * 24 * 60 * 60 * 1000,
+};
+const CLEAR_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    path: "/",
+};
+
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
+const PASSWORD_EXPIRY_DAYS = 90;
+
+const generateaccesstokenandrefreshtoken = async (adminId) => {
+    // BUG-002 fix: select "+refreshtoken" to allow comparison during renewal.
+    const admin = await Admin.findById(adminId).select("+refreshtoken");
+    const accesstoken = admin.generateaccesstoken();
+    const refreshtoken = admin.generaterefreshtoken();
+
+    admin.refreshtoken = refreshtoken;
+    await admin.save({ validateBeforeSave: false });
+
+    return { accesstoken, refreshtoken };
+};
 
 const registeradmin = asyncHandler(async (req, res) => {
-    const { adminname, adminusername, email, password, phonenumber } = req.body
-    if ([adminname, adminusername, email, password, phonenumber].some((field) => !field || field?.trim() === "")) {
-        throw new apiError(400, "All fields are required")
+    const { adminname, adminusername, email, password, phonenumber } = req.body;
+
+    if ([adminname, adminusername, email, password, phonenumber].some((f) => !f || f?.trim() === "")) {
+        throw new apiError(400, "All fields are required");
     }
-    const existedadmin = await Admin.findOne({
-        $or: [{ adminusername }, { email }]
-    })
-    if (existedadmin) {
-        throw new apiError(409, "Admin with same email or username already exists")
-    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) throw new apiError(400, passwordError);
+
+    const existedadmin = await Admin.findOne({ $or: [{ adminusername }, { email }] });
+    if (existedadmin) throw new apiError(409, "Admin with same email or username already exists");
+
     const citizenshipDocumentLocalPath = req.files?.citizenshipdocument?.[0]?.buffer;
     const adminIdlocalpath = req.files?.adminId?.[0]?.buffer;
     const profilepicturelocalpath = req.files?.profilepicture?.[0]?.buffer;
     const appointmentletterlocalpath = req.files?.appointmentletter?.[0]?.buffer;
-    if (
-        !citizenshipDocumentLocalPath ||
-        !adminIdlocalpath ||
-        !profilepicturelocalpath ||
-        !appointmentletterlocalpath
-    ) {
+
+    if (!citizenshipDocumentLocalPath || !adminIdlocalpath || !profilepicturelocalpath || !appointmentletterlocalpath) {
         throw new apiError(400, "All files are required");
     }
 
-    const citizenshipdocument = await uploadLocal(citizenshipDocumentLocalPath,"admin/citizenship-document")
-    const adminId = await uploadLocal(adminIdlocalpath,"admin/admin-id")
-    const profilepicture = await uploadLocal(profilepicturelocalpath,"admin/profile-picture")
-    const appointmentletter = await uploadLocal(appointmentletterlocalpath,"admin/appointment-letter")
+    const citizenshipdocument = await uploadLocal(citizenshipDocumentLocalPath, "admin/citizenship-document");
+    const adminId = await uploadLocal(adminIdlocalpath, "admin/admin-id");
+    const profilepicture = await uploadLocal(profilepicturelocalpath, "admin/profile-picture");
+    const appointmentletter = await uploadLocal(appointmentletterlocalpath, "admin/appointment-letter");
 
     if (!citizenshipdocument || !adminId || !profilepicture || !appointmentletter) {
-        throw new apiError(500, "File upload failed")
+        throw new apiError(500, "File upload failed");
     }
+
     const admin = await Admin.create({
         adminname,
         adminusername,
@@ -75,177 +99,243 @@ const registeradmin = asyncHandler(async (req, res) => {
             citizenshipdocument: citizenshipdocument.secure_url,
             adminId: adminId.secure_url,
             profilepicture: profilepicture.secure_url,
-            appointmentletter: appointmentletter.secure_url
+            appointmentletter: appointmentletter.secure_url,
         },
-    })
+        passwordChangedAt: new Date(),
+    });
 
-    if (!admin) {
-        throw new apiError(500, "Admin registration failed")
-    }
+    if (!admin) throw new apiError(500, "Admin registration failed");
 
-    const createdAdmin = await Admin.findById(admin._id).select("-password -refreshtoken")
+    const createdAdmin = await Admin.findById(admin._id).select("-password -refreshtoken -passwordHistory");
 
     sendAdminMail({
         to: email,
         subject: `Welcome to SmartFit, ${createdAdmin.adminname}! Your Registration is Successful`,
         html: welcomeemailtemplate(createdAdmin.adminname),
-    })
-
-    return res
-        .status(201)
-        .json(
-            new apiResponse(201, createdAdmin, "Admin registered successfully")
-        );
-
-})
-
-const loginadmin = asyncHandler(async (req, res) => {
-    const { adminusername, email, password } = req.body
-    if (!adminusername && !email) {
-        throw new apiError(400, "Admin username or email is required")
-    }
-    if (!password) {
-        throw new apiError(400, "Password is required")
-    }
-    const existedadmin = await Admin.findOne({
-        $or: [{ adminusername }, { email }]
-    }).select("+password")
-    if (!existedadmin) {
-        throw new apiError(404, "Admin not found")
-    }
-    const ispasswordvalid = await existedadmin.ispasswordcorrect(password)
-    if (!ispasswordvalid) {
-        throw new apiError(401, "Password is not valid")
-    }
-    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(existedadmin._id)
-
-    const loggedinadmin = await Admin.findById(existedadmin._id).select("-password -refreshtoken")
-    if (!loggedinadmin) {
-        throw new apiError(500, "Admin login failed")
-    }
-    sendAdminMail({
-        to: email,
-        subject: `Login Alert – SmartFit Account Accessed Successfully`,
-        html: logintemplate(loggedinadmin.adminname),
     });
 
-    
-    const options1 = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
-        path: "/",
-        maxAge: 1 * 24 * 60 * 60 * 1000
+    return res.status(201).json(new apiResponse(201, createdAdmin, "Admin registered successfully"));
+});
+
+const loginadmin = asyncHandler(async (req, res) => {
+    const { adminusername, email, password } = req.body;
+
+    if (!adminusername && !email) throw new apiError(400, "Admin username or email is required");
+    if (!password) throw new apiError(400, "Password is required");
+
+    const admin = await Admin.findOne({
+        $or: [{ adminusername }, { email }],
+    }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
+
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    if (admin.lockedUntil && admin.lockedUntil > new Date()) {
+        const minutesLeft = Math.ceil((admin.lockedUntil - Date.now()) / 60000);
+        throw new apiError(423, `Account locked. Try again in ${minutesLeft} minute(s).`);
     }
-    const options2 = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
-        path: "/",
-        maxAge: 20 * 24 * 60 * 60 * 1000
+
+    // Adaptive CAPTCHA: enforce after 3 failed attempts
+    const captchaSecret = process.env.HCAPTCHA_SECRET_KEY;
+    if (captchaSecret && (admin.loginAttempts || 0) >= 3) {
+        const captchaToken = req.body["h-captcha-response"];
+        if (!captchaToken) {
+            return res.status(200).json(new apiResponse(200, { captchaRequired: true }, "Please complete CAPTCHA verification."));
+        }
+        const captchaParams = new URLSearchParams({ secret: captchaSecret, response: captchaToken });
+        let captchaData;
+        try {
+            const captchaRes = await fetch("https://hcaptcha.com/siteverify", { method: "POST", body: captchaParams, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+            captchaData = await captchaRes.json();
+        } catch {
+            throw new apiError(503, "CAPTCHA service unavailable. Please try again.");
+        }
+        if (!captchaData.success) throw new apiError(400, "CAPTCHA verification failed. Please try again.");
     }
+
+    const isPasswordValid = await admin.ispasswordcorrect(password);
+    if (!isPasswordValid) {
+        admin.loginAttempts = (admin.loginAttempts || 0) + 1;
+        if (admin.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+            admin.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        }
+        await admin.save({ validateBeforeSave: false });
+        throw new apiError(401, "Password is not valid");
+    }
+
+    admin.loginAttempts = 0;
+    admin.lockedUntil = null;
+    await admin.save({ validateBeforeSave: false });
+
+    if (admin.passwordChangedAt) {
+        const daysSinceChange = (Date.now() - admin.passwordChangedAt) / (1000 * 60 * 60 * 24);
+        if (daysSinceChange > PASSWORD_EXPIRY_DAYS) {
+            const tempToken = jwt.sign(
+                { _id: admin._id, role: "admin" },
+                process.env.REFRESH_TOKEN_SECRET,
+                { expiresIn: "10m" }
+            );
+            return res
+                .status(403)
+                .cookie("tempToken", tempToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 10 * 60 * 1000 })
+                .json(new apiResponse(403, { passwordExpired: true }, "Your password has expired. Please reset it."));
+        }
+    }
+
+    const mfaToken = jwt.sign(
+        { _id: admin._id, role: "admin" },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: "5m" }
+    );
+
+    const otp = generateOtp();
+    await saveOTP(admin.email, otp);
+
+    sendAdminMail({
+        to: admin.email,
+        subject: "SmartFit — Login Verification Code",
+        html: `<p>Your SmartFit admin login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes.</p>`,
+    });
+
     return res
         .status(200)
-        .cookie("accesstoken", accesstoken, options1)
-        .cookie("refreshtoken", refreshtoken, options2)
-        .json(new apiResponse(200, { user: loggedinadmin, accesstoken, refreshtoken }, "Admin logged in successfully"))
+        .cookie("mfaToken", mfaToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
+        .json(new apiResponse(200, { mfaRequired: true }, "OTP sent to registered email."));
+});
 
+const verifyLoginMfa = asyncHandler(async (req, res) => {
+    const { otp } = req.body;
+    if (!otp) throw new apiError(400, "OTP is required");
 
-})
-const logoutadmin = asyncHandler(async (req, res, next) => {
-    await Admin.findByIdAndUpdate(req.admin?._id, { $unset: { refreshtoken: 1 } }, { new: true }
-    )
-    const options = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
-        path: "/",
+    const admin = req.admin;
+
+    const result = await verifyOTP(admin.email, otp);
+    if (!result.valid) {
+        if (result.reason === "expired") throw new apiError(401, "OTP expired. Please log in again.");
+        if (result.reason === "too_many_attempts") throw new apiError(429, "Too many OTP attempts. Please log in again.");
+        throw new apiError(401, "Invalid OTP");
     }
+    clearOTP(admin.email);
+
+    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
+    const loggedinadmin = await Admin.findById(admin._id).select("-password -refreshtoken -passwordHistory");
+
+    sendAdminMail({
+        to: admin.email,
+        subject: "Login Alert – SmartFit Account Accessed Successfully",
+        html: logintemplate(admin.adminname),
+    });
+
     return res
         .status(200)
-        .clearCookie("accesstoken", options)
-        .clearCookie("refreshtoken", options)
-        .json(new apiResponse(200, {}, "Admin logged out successfully"))
-})
+        .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
+        .cookie("accesstoken", accesstoken, ACCESS_COOKIE_OPTIONS)
+        .cookie("refreshtoken", refreshtoken, REFRESH_COOKIE_OPTIONS)
+        .json(new apiResponse(200, { user: loggedinadmin }, "Admin logged in successfully"));
+});
+
+const logoutadmin = asyncHandler(async (req, res) => {
+    await Admin.findByIdAndUpdate(req.admin?._id, { $unset: { refreshtoken: 1 } }, { new: true });
+    return res
+        .status(200)
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Admin logged out successfully"));
+});
 
 const accesstokenrenewal = asyncHandler(async (req, res) => {
-    const { refreshtoken } = req.cookies || req.body;
+    // BUG-008 fix: optional chaining on cookies.
+    const refreshtoken = req.cookies?.refreshtoken;
 
-    if (!refreshtoken) {
-        throw new apiError(401, "Unauthorized request");
+    if (!refreshtoken) throw new apiError(401, "Unauthorized request");
+
+    let decodetoken;
+    try {
+        // BUG-007 fix: wrap jwt.verify in try/catch.
+        decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
+    } catch {
+        throw new apiError(401, "Invalid or expired refresh token");
     }
-    const decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
-    if (!decodetoken) {
-        throw new apiError(401, "invalid refresh token");
-    }
-    if (decodetoken.role !== "admin") {
-        throw new apiError(401, "Admin session required");
-    }
-    const admin = await Admin.findById(decodetoken._id);
-    if (!admin) {
-        throw new apiError(404, "Admin not found");
-    }
+
+    if (decodetoken.role !== "admin") throw new apiError(401, "Admin session required");
+
+    // BUG-002 fix: select "+refreshtoken".
+    const admin = await Admin.findById(decodetoken._id).select("+refreshtoken");
+    if (!admin) throw new apiError(404, "Admin not found");
+
     if (admin.refreshtoken !== refreshtoken) {
-        throw new apiError(401, "Invalid refresh token or token is expired");
+        throw new apiError(401, "Refresh token mismatch or already used");
     }
+
     const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
 
-
-    const options1 = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
-        path: "/",
-        maxAge: 1 * 24 * 60 * 60 * 1000
-    }
-    const options2 = {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
-        path: "/",
-        maxAge: 20 * 24 * 60 * 60 * 1000
-    }
     return res
         .status(200)
-        .cookie("accesstoken", accesstoken, options1)
-        .cookie("refreshtoken", newrefreshtoken, options2)
-        .json(new apiResponse(200, { accesstoken, refreshtoken: newrefreshtoken }, "Access token renewed successfully"));
-
-})
+        .cookie("accesstoken", accesstoken, ACCESS_COOKIE_OPTIONS)
+        .cookie("refreshtoken", newrefreshtoken, REFRESH_COOKIE_OPTIONS)
+        .json(new apiResponse(200, { accesstoken }, "Access token renewed successfully"));
+});
 
 const updatepassword = asyncHandler(async (req, res) => {
     const { oldpassword, newpassword } = req.body;
 
-    if (!oldpassword || !newpassword) {
-        throw new apiError(400, "Old password and new password are required");
-    }
-    if (oldpassword === newpassword) {
-        throw new apiError(400, "New password cannot be the same as old password");
-    }
-    const admin = await Admin.findById(req.admin?._id).select("+password");
+    if (!oldpassword || !newpassword) throw new apiError(400, "Old password and new password are required");
+
+    const passwordError = validatePassword(newpassword);
+    if (passwordError) throw new apiError(400, passwordError);
+
+    const admin = await Admin.findById(req.admin?._id).select("+password +passwordHistory");
     if (!admin) throw new apiError(404, "Admin not found");
 
-    const ispasswordvalid = await admin.ispasswordcorrect(oldpassword);
-    if (!ispasswordvalid) {
-        throw new apiError(401, "Old password is incorrect");
+    const isOldValid = await admin.ispasswordcorrect(oldpassword);
+    if (!isOldValid) throw new apiError(401, "Old password is incorrect");
+
+    if (await bcrypt.compare(newpassword, admin.password)) {
+        throw new apiError(400, "New password cannot be the same as the current password");
     }
+    for (const oldHash of admin.passwordHistory || []) {
+        if (await bcrypt.compare(newpassword, oldHash)) {
+            throw new apiError(400, "Password has been used recently. Please choose a different password.");
+        }
+    }
+
+    const updatedHistory = [admin.password, ...(admin.passwordHistory || [])].slice(0, 5);
+    admin.passwordHistory = updatedHistory;
     admin.password = newpassword;
+    admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
 
     return res.status(200).json(new apiResponse(200, {}, "Password updated successfully"));
-})
+});
 
 const resetForgottenPassword = asyncHandler(async (req, res) => {
     const { newpassword } = req.body;
     if (!newpassword) throw new apiError(400, "New password is required");
 
-    const admin = await Admin.findById(req.user?._id);
+    const passwordError = validatePassword(newpassword);
+    if (passwordError) throw new apiError(400, passwordError);
+
+    const admin = await Admin.findById(req.user?._id).select("+password +passwordHistory");
     if (!admin) throw new apiError(404, "Admin not found");
 
+    if (await bcrypt.compare(newpassword, admin.password)) {
+        throw new apiError(400, "New password cannot be the same as the current password");
+    }
+    for (const oldHash of admin.passwordHistory || []) {
+        if (await bcrypt.compare(newpassword, oldHash)) {
+            throw new apiError(400, "Password has been used recently. Please choose a different password.");
+        }
+    }
+
+    const updatedHistory = [admin.password, ...(admin.passwordHistory || [])].slice(0, 5);
+    admin.passwordHistory = updatedHistory;
     admin.password = newpassword;
+    admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
 
-    return res.status(200).json(new apiResponse(200, {}, "Password reset successfully"));
+    return res
+        .status(200)
+        .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password reset successfully"));
 });
 
 const updateprofile = asyncHandler(async (req, res) => {
@@ -256,66 +346,59 @@ const updateprofile = asyncHandler(async (req, res) => {
     if (email) updates.email = email;
     if (phonenumber) updates.phonenumber = phonenumber;
 
-    if (Object.keys(updates).length === 0) {
-        throw new apiError(400, "At least one field is required to update");
-    }
+    if (Object.keys(updates).length === 0) throw new apiError(400, "At least one field is required to update");
 
     const updatedadmin = await Admin.findByIdAndUpdate(
         req.admin?._id,
         { $set: updates },
         { new: true }
-    ).select("-password -refreshtoken");
+    ).select("-password -refreshtoken -passwordHistory");
 
-    if (!updatedadmin) {
-        throw new apiError(404, "Admin not found");
-    }
+    if (!updatedadmin) throw new apiError(404, "Admin not found");
 
-    return res
-        .status(200)
-        .json(new apiResponse(200, updatedadmin, "Profile updated successfully"));
+    return res.status(200).json(new apiResponse(200, updatedadmin, "Profile updated successfully"));
 });
 
 const getprofiledetails = asyncHandler(async (req, res) => {
-    const admin = await Admin.findById(req.admin?._id).select(" -password -refreshtoken")
+    const admin = await Admin.findById(req.admin?._id).select("-password -refreshtoken -passwordHistory");
     if (!admin) throw new apiError(404, "Admin not found");
-
-    return res.status(200)
-        .json(new apiResponse(200, admin, "profile fetched successfully"))
-})
+    return res.status(200).json(new apiResponse(200, admin, "Profile fetched successfully"));
+});
 
 const updateprofilepic = asyncHandler(async (req, res) => {
-    const profilepicturelocalpath = req.file?.buffer
-    if (!profilepicturelocalpath) {
-        throw new apiError(400, "profilepicture not found ")
-    }
-    const profilepicture = await uploadLocal(profilepicturelocalpath,"admin/profile-picture")
-    if (!profilepicture) {
-        throw new apiError(400, "profilepicture upload failed to server")
-    }
+    const profilepicturelocalpath = req.file?.buffer;
+    if (!profilepicturelocalpath) throw new apiError(400, "Profile picture not found");
+
+    const profilepicture = await uploadLocal(profilepicturelocalpath, "admin/profile-picture");
+    if (!profilepicture) throw new apiError(400, "Profile picture upload failed");
+
     const updatedadmin = await Admin.findByIdAndUpdate(
         req.admin?._id,
-        {
-            $set: {
-                "verificationdocs.profilepicture": profilepicture.secure_url || profilepicture.url
-            }
-        },
-        {
-            new: true
-        }).select("-password -refreshtoken")
+        { $set: { "verificationdocs.profilepicture": profilepicture.secure_url || profilepicture.url } },
+        { new: true }
+    ).select("-password -refreshtoken -passwordHistory");
 
-    if (!updatedadmin) {
-        throw new apiError(404, "Admin not found")
-    }
+    if (!updatedadmin) throw new apiError(404, "Admin not found");
 
-    res.status(200)
-        .json(new apiResponse(200, updatedadmin, "profilepicture updated successfully"))
-})
+    return res.status(200).json(new apiResponse(200, updatedadmin, "Profile picture updated successfully"));
+});
 
 const getCurrentAdmin = asyncHandler(async (req, res) => {
-    const admin = await Admin.findById(req.admin?._id).select("-password -refreshtoken");
-    if (!admin) {
-        throw new apiError(404, "Admin not found");
-    }
+    const admin = await Admin.findById(req.admin?._id).select("-password -refreshtoken -passwordHistory");
+    if (!admin) throw new apiError(404, "Admin not found");
     return res.status(200).json(new apiResponse(200, admin, "Current admin fetched successfully"));
 });
-export { registeradmin, loginadmin, logoutadmin, updateprofile, updatepassword, resetForgottenPassword, getprofiledetails, accesstokenrenewal, updateprofilepic, getCurrentAdmin }; 
+
+export {
+    registeradmin,
+    loginadmin,
+    verifyLoginMfa,
+    logoutadmin,
+    updateprofile,
+    updatepassword,
+    resetForgottenPassword,
+    getprofiledetails,
+    accesstokenrenewal,
+    updateprofilepic,
+    getCurrentAdmin,
+};
