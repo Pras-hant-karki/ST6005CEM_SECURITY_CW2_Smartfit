@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
+import { trackAttempt } from "../utils/rateStore.js";
+import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
 import bcrypt from "bcrypt";
@@ -238,7 +240,17 @@ const updateDoctorByAdmin = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, updatedDoctor, "Doctor updated successfully"));
 });
 
+const REG_WINDOW_MS = 10 * 60 * 1000;
+const REG_LIMIT = 5;
+
 const registerdoctor = asyncHandler(async (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+    if (trackAttempt(`reg:${clientIp}`, REG_WINDOW_MS, REG_LIMIT)) {
+        const token = req.body["h-captcha-response"];
+        if (!token) return res.status(200).json(new apiResponse(200, { captchaRequired: true }, "Please complete CAPTCHA verification."));
+        await verifyCaptchaToken(token);
+    }
+
     const { doctorname, doctorusername, email, password, phonenumber, sex, age, experience, qualification, department, specialization, shift } = req.body;
 
     if ([doctorname, doctorusername, email, password, phonenumber, sex, age, experience, qualification, department, specialization, shift].some(
