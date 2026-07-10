@@ -1,0 +1,78 @@
+services:
+  mongodb:
+    image: mongo:7-jammy
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    # Not exposed to the host in production; accessible only within the Docker network
+    expose:
+      - "27017"
+
+  backend:
+    build:
+      context: ./Backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URL: mongodb://mongodb:27017
+      DB_NAME: smartfit
+      PORT: 8000
+      # Secrets must be supplied via a real .env or Docker secrets in production
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
+      ACCESS_TOKEN_EXPIRY: ${ACCESS_TOKEN_EXPIRY:-1d}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-20d}
+      CORS_ORIGIN_PATIENT: http://localhost:5173
+      CORS_ORIGIN_DOCTOR: http://localhost:5174
+      CORS_ORIGIN_ADMIN: http://localhost:5175
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PATIENT_FRONTEND_URL: http://localhost:5173
+      HCAPTCHA_SECRET_KEY: ${HCAPTCHA_SECRET_KEY:-}
+    depends_on:
+      - mongodb
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1/patient
+        VITE_DOCTOR_API_BASE_URL: http://localhost:8000/api/v1/doctor
+        VITE_DOCTOR_PORTAL_URL: http://localhost:5174/
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  doctor:
+    build:
+      context: ./Doctor
+      args:
+        VITE_DOCTOR_API_BASE_URL: http://localhost:8000/api/v1/doctor
+    restart: unless-stopped
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+
+  admin:
+    build:
+      context: ./Admin
+      args:
+        VITE_ADMIN_API_BASE_URL: http://localhost:8000/api/v1/admin
+    restart: unless-stopped
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:

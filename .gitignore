@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output — never commit compiled/bundled files
+dist/
+dist-ssr/
+
+# Environment files — contain secrets, never commit
+.env
+.env.local
+.env.*.local
+
+# Uploaded files — runtime data, not source code
+Backend/public/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
