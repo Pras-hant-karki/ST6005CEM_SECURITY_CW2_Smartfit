@@ -1,0 +1,63 @@
+services:
+  mongodb:
+    image: mongo:7-jammy
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    expose:
+      - "27017"
+
+  backend:
+    image: prashantkarki009/smartfit-backend:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URL: mongodb://mongodb:27017
+      DB_NAME: smartfit
+      PORT: 8000
+      # Secrets are supplied via a .env file placed next to this compose file
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
+      ACCESS_TOKEN_EXPIRY: ${ACCESS_TOKEN_EXPIRY:-1d}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-20d}
+      CRON_SECRET: ${CRON_SECRET}
+      CORS_ORIGIN_PATIENT: http://localhost:5173
+      CORS_ORIGIN_DOCTOR: http://localhost:5174
+      CORS_ORIGIN_ADMIN: http://localhost:5175
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PATIENT_FRONTEND_URL: http://localhost:5173
+      HCAPTCHA_SECRET_KEY: ${HCAPTCHA_SECRET_KEY:-}
+    depends_on:
+      - mongodb
+
+  frontend:
+    image: prashantkarki009/smartfit-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  doctor:
+    image: prashantkarki009/smartfit-doctor:latest
+    restart: unless-stopped
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+
+  admin:
+    image: prashantkarki009/smartfit-admin:latest
+    restart: unless-stopped
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:

@@ -6,7 +6,7 @@
 **/.env.*
 !.env.example
 ./BUGS.md
-
+.env
 # Build output
 **/dist/
 **/build/
