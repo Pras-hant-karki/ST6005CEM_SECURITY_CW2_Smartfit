@@ -3,8 +3,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-ARG VITE_DOCTOR_API_BASE_URL=http://localhost:8000/api/v1/doctor
-ENV VITE_DOCTOR_API_BASE_URL=$VITE_DOCTOR_API_BASE_URL
+ARG VITE_API_BASE_URL=http://localhost:8000/api/v1/doctor
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_PUBLIC_HOME_URL=http://localhost:5173/
+ENV VITE_PUBLIC_HOME_URL=$VITE_PUBLIC_HOME_URL
 RUN npm run build
 
 FROM nginx:1.27-alpine AS runtime

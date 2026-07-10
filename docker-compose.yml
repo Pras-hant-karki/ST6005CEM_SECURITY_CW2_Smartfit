@@ -24,6 +24,7 @@ services:
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
       ACCESS_TOKEN_EXPIRY: ${ACCESS_TOKEN_EXPIRY:-1d}
       REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-20d}
+      CRON_SECRET: ${CRON_SECRET}
       CORS_ORIGIN_PATIENT: http://localhost:5173
       CORS_ORIGIN_DOCTOR: http://localhost:5174
       CORS_ORIGIN_ADMIN: http://localhost:5175
@@ -56,7 +57,8 @@ services:
     build:
       context: ./Doctor
       args:
-        VITE_DOCTOR_API_BASE_URL: http://localhost:8000/api/v1/doctor
+        VITE_API_BASE_URL: http://localhost:8000/api/v1/doctor
+        VITE_PUBLIC_HOME_URL: http://localhost:5173/
     restart: unless-stopped
     ports:
       - "5174:80"
@@ -67,7 +69,7 @@ services:
     build:
       context: ./Admin
       args:
-        VITE_ADMIN_API_BASE_URL: http://localhost:8000/api/v1/admin
+        VITE_API_BASE_URL: http://localhost:8000/api/v1/admin
     restart: unless-stopped
     ports:
       - "5175:80"
