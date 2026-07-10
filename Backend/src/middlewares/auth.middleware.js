@@ -18,7 +18,7 @@ const verifyAuth = asyncHandler(async (req, res, next) => {
     ? "admin"
     : req.originalUrl.includes("/doctor")
       ? "doctor"
-      : req.originalUrl.includes("/patient") || req.originalUrl.includes("/appointment")
+      : req.originalUrl.includes("/patient") || req.originalUrl.includes("/appointment") || req.originalUrl.includes("/payment")
         ? "patient"
         : null;
 

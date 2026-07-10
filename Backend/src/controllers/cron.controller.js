@@ -2,8 +2,10 @@ import { Appointment } from "../models/appointment.model.js";
 import { Patient } from "../models/patient.model.js";
 import sendMail from "../services/mail.js";
 import { appointmentcancellation } from "../utils/emailtemplate.js";
+import { asyncHandler } from "../utils/asynchandler.js";
+import crypto from "crypto";
 
-const autoCancelExpiredAppointments = async (req, res) => {
+const autoCancelExpiredAppointments = asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -62,6 +64,6 @@ const autoCancelExpiredAppointments = async (req, res) => {
     message: "Auto cancellation completed",
     cancelledCount: expiredAppointments.length,
   });
-};
+});
 
 export { autoCancelExpiredAppointments };

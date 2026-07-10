@@ -8,11 +8,11 @@ import { Doctor } from "../models/doctor.model.js";
 
 // CREATE - Create a new lab test
 export const createlabtest = asyncHandler(async (req, res) => {
-    const { prescription_id, patient_id, tests, attachments } = req.body;
+    const { prescription_id, tests, attachments } = req.body;
 
-    // Validate required fields
-    if (!prescription_id || !patient_id || !tests || !Array.isArray(tests) || tests.length === 0) {
-        throw new apiError(400, "Prescription ID, Patient ID, and tests are required");
+    // Validate required fields (patient_id is derived server-side from prescription)
+    if (!prescription_id || !tests || !Array.isArray(tests) || tests.length === 0) {
+        throw new apiError(400, "Prescription ID and tests are required");
     }
 
     // Validate tests array structure
@@ -39,11 +39,14 @@ export const createlabtest = asyncHandler(async (req, res) => {
         throw new apiError(404, "Prescription not found");
     }
 
-    // Verify patient exists
-    const patient = await Patient.findById(patient_id);
-    if (!patient) {
-        throw new apiError(404, "Patient not found");
+    // RBAC: doctor must own the prescription they are ordering the lab test against
+    if (prescription.doctordetails._id.toString() !== req.doctor._id.toString()) {
+        throw new apiError(403, "You can only create lab tests for your own prescriptions");
     }
+
+    // Derive patient_id from the prescription (prevent mass-assignment of patient_id)
+    const patient_id = prescription.patientdetails._id;
+    if (!patient_id) throw new apiError(400, "Prescription is missing patient information");
 
     // Verify doctor exists
     const doctor = await Doctor.findById(req.doctor._id);
@@ -298,6 +301,11 @@ export const updatetestresults = asyncHandler(async (req, res) => {
     const labtest = await Labtest.findById(labtestid);
     if (!labtest) {
         throw new apiError(404, "Lab test not found");
+    }
+
+    // IDOR: doctors may only update results for their own lab tests
+    if (req.doctor && labtest.doctor_id.toString() !== req.doctor._id.toString()) {
+        throw new apiError(403, "You don't have permission to update results for this lab test");
     }
 
     if (test_index === undefined || test_index < 0 || test_index >= labtest.tests.length) {

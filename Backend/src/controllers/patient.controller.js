@@ -11,6 +11,7 @@ import { welcomeemailtemplate, logintemplate } from '../utils/emailtemplate.js';
 import { validatePassword } from '../utils/passwordValidator.js';
 import { trackAttempt } from '../utils/rateStore.js';
 import { verifyCaptchaToken } from '../middlewares/captcha.middleware.js';
+import { logAudit } from '../services/auditLog.service.js';
 import { saveOTP, verifyOTP, clearOTP } from '../services/otp.js';
 import generateOtp from '../utils/otpgenerator.js';
 import { forgetpasswordotptemplate } from '../utils/emailtemplate.js';
@@ -140,6 +141,8 @@ const registerPatient = asyncHandler(async (req, res) => {
         html: welcomeemailtemplate(createdpatient.patientname),
     });
 
+    logAudit({ userId: patient._id, userRole: "patient", action: "registration", resource: "patient", ip: req.ip, result: "success" });
+
     return res.status(201).json(new apiResponse(201, createdpatient, "Patient registered successfully"));
 });
 
@@ -188,6 +191,7 @@ const loginPatient = asyncHandler(async (req, res) => {
             patient.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
         }
         await patient.save({ validateBeforeSave: false });
+        logAudit({ userId: patient._id, userRole: "patient", action: "login_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
         throw new apiError(401, "Invalid password");
     }
 
@@ -229,6 +233,8 @@ const loginPatient = asyncHandler(async (req, res) => {
         html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes. Do not share it with anyone.</p>`,
     });
 
+    logAudit({ userId: patient._id, userRole: "patient", action: "login_mfa_initiated", resource: "patient", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .cookie("mfaToken", mfaToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
@@ -244,6 +250,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     const result = await verifyOTP(patient.email, otp);
     if (!result.valid) {
+        logAudit({ userId: patient._id, userRole: "patient", action: "mfa_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: result.reason } });
         if (result.reason === "expired") throw new apiError(401, "OTP expired. Please log in again.");
         if (result.reason === "too_many_attempts") throw new apiError(429, "Too many incorrect OTP attempts. Please log in again.");
         throw new apiError(401, "Invalid OTP");
@@ -259,6 +266,8 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
         html: logintemplate(patient.patientname),
     });
 
+    logAudit({ userId: patient._id, userRole: "patient", action: "login_success", resource: "patient", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
@@ -273,6 +282,8 @@ const logoutPatient = asyncHandler(async (req, res) => {
         { $unset: { refreshtoken: 1 } },
         { new: true }
     );
+
+    logAudit({ userId: req.patient._id, userRole: "patient", action: "logout", resource: "patient", ip: req.ip, result: "success" });
 
     return res
         .status(200)
@@ -373,6 +384,8 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     user.passwordChangedAt = new Date();
     await user.save({ validateBeforeSave: false });
 
+    logAudit({ userId: req.user?._id, userRole: req.userRole || "patient", action: "password_reset", resource: "patient", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
@@ -403,6 +416,8 @@ const updateprofile = asyncHandler(async (req, res) => {
     ).select("-password -refreshtoken -passwordHistory");
 
     if (!updatedPatient) throw new apiError(404, "Patient not found");
+
+    logAudit({ userId: req.patient._id, userRole: "patient", action: "profile_updated", resource: "patient", ip: req.ip, result: "success", metadata: { fields: Object.keys(updates) } });
 
     return res.status(200).json(new apiResponse(200, updatedPatient, "Profile updated successfully"));
 });

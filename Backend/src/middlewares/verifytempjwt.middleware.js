@@ -6,7 +6,7 @@ import { Admin } from "../models/admin.model.js";
 import { Doctor } from "../models/doctor.model.js";
 
 const verifyTempjwt = asyncHandler(async (req, res, next) => {
-    const token = req.cookies?.tempToken || req.header("Authorization")?.replace("Bearer ", "");
+    const token = req.cookies?.tempToken;
     if (!token) throw new apiError(401, "Authorization token missing");
 
     let decoded;

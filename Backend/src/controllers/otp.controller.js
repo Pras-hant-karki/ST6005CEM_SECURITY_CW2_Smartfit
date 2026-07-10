@@ -2,6 +2,8 @@ import sendMail from "../services/mail.js";
 import { asyncHandler } from "../utils/asynchandler.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import { apiError } from "../utils/apiError.js";
+import { trackAttempt } from "../utils/rateStore.js";
+import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import generateOtp from "../utils/otpgenerator.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import { Patient } from "../models/patient.model.js";
@@ -61,6 +63,13 @@ const sendForgetPasswordOtp = asyncHandler(async (req, res) => {
 
     if (!email && !phonenumber) throw new apiError(400, "Email or phone number is required");
 
+    const identifier = email || phonenumber || req.ip || "unknown";
+    if (trackAttempt(`forgotpwd:${identifier}`, 10 * 60 * 1000, 3)) {
+        const token = req.body["h-captcha-response"];
+        if (!token) return res.status(200).json(new apiResponse(200, { captchaRequired: true }, "Please complete CAPTCHA verification."));
+        await verifyCaptchaToken(token);
+    }
+
     const query = email ? { email } : { phonenumber };
     const patient = await Patient.findOne(query);
     const doctor = await Doctor.findOne(query);
@@ -109,7 +118,10 @@ const verifyForgotPasswordOtp = asyncHandler(async (req, res) => {
     }
 
     clearOTP(email);
-    return res.status(200).json(new apiResponse(200, {}, "OTP verified successfully"));
+    return res
+        .status(200)
+        .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "OTP verified successfully"));
 });
 
 export { sendotp, verifyotp, verifyForgotPasswordOtp, sendForgetPasswordOtp };

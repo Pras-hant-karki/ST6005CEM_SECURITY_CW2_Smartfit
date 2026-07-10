@@ -17,7 +17,7 @@ const adminSchema = new Schema(
     adminname: { type: String, required: true, trim: true },
     adminusername: { type: String, required: true, unique: true, trim: true },
     email: { type: String, required: true, unique: true, trim: true },
-    password: { type: String, required: true, minlength: 8, select: false },
+    password: { type: String, required: true, minlength: 12, select: false },
     phonenumber: {
       type: String,
       required: true,

@@ -1,0 +1,215 @@
+import Stripe from "stripe";
+import { asyncHandler } from "../utils/asynchandler.js";
+import { apiError } from "../utils/apiError.js";
+import { apiResponse } from "../utils/apiResponse.js";
+import { Appointment } from "../models/appointment.model.js";
+import { Payment } from "../models/payment.model.js";
+import { logAudit } from "../services/auditLog.service.js";
+
+const getStripe = () => {
+    if (!process.env.STRIPE_SECRET_KEY) throw new apiError(503, "Payment service not configured");
+    return new Stripe(process.env.STRIPE_SECRET_KEY);
+};
+
+// POST /api/v1/payment/create-checkout-session
+// Body: { appointmentId }
+export const createCheckoutSession = asyncHandler(async (req, res) => {
+    if (!req.patient) throw new apiError(401, "Unauthorized");
+
+    const { appointmentId } = req.body;
+    if (!appointmentId) throw new apiError(400, "Appointment ID is required");
+
+    // Verify appointment exists and belongs to this patient (IDOR check)
+    const appointment = await Appointment.findById(appointmentId).populate("doctor");
+    if (!appointment) throw new apiError(404, "Appointment not found");
+    if (appointment.patient.toString() !== req.patient._id.toString()) {
+        throw new apiError(403, "Access denied");
+    }
+    if (appointment.status === "Cancelled") {
+        throw new apiError(400, "Cannot pay for a cancelled appointment");
+    }
+
+    // Prevent duplicate payment
+    const existing = await Payment.findOne({ appointmentId, status: "completed" });
+    if (existing) throw new apiError(409, "Appointment already paid");
+
+    // Server-side amount — never trust client-provided price
+    const doctor = appointment.doctor;
+    if (!doctor || doctor.consultationfee == null) {
+        throw new apiError(500, "Doctor consultation fee not configured");
+    }
+    const amountInPence = Math.round(doctor.consultationfee * 100);
+    if (amountInPence <= 0) throw new apiError(400, "Invalid consultation fee");
+
+    const stripe = getStripe();
+    const patientUrl = process.env.PATIENT_FRONTEND_URL || "http://localhost:5173";
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [{
+            price_data: {
+                currency: "gbp",
+                product_data: {
+                    name: `Consultation with Dr. ${doctor.doctorname}`,
+                    description: `Appointment on ${appointment.appointmentdate.toDateString()}`,
+                },
+                unit_amount: amountInPence,
+            },
+            quantity: 1,
+        }],
+        mode: "payment",
+        success_url: `${patientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${patientUrl}/payment/cancel`,
+        metadata: {
+            appointmentId: appointmentId.toString(),
+            patientId: req.patient._id.toString(),
+            doctorId: doctor._id.toString(),
+        },
+        client_reference_id: appointmentId.toString(),
+    });
+
+    await Payment.create({
+        appointmentId,
+        patientId: req.patient._id,
+        doctorId: doctor._id,
+        amount: amountInPence,
+        currency: "gbp",
+        stripeSessionId: session.id,
+        status: "pending",
+    });
+
+    await logAudit({
+        userId: req.patient._id,
+        userRole: "patient",
+        action: "payment_initiated",
+        resource: `appointment/${appointmentId}`,
+        ip: req.ip,
+        result: "success",
+        metadata: { appointmentId, amount: amountInPence, currency: "gbp" },
+    });
+
+    return res.status(200).json(new apiResponse(200, { url: session.url, sessionId: session.id }, "Checkout session created"));
+});
+
+// GET /api/v1/payment/verify?session_id=...
+export const verifyPayment = asyncHandler(async (req, res) => {
+    if (!req.patient) throw new apiError(401, "Unauthorized");
+
+    const { session_id } = req.query;
+    if (!session_id) throw new apiError(400, "Session ID is required");
+
+    // Ownership check: payment must belong to this patient
+    const payment = await Payment.findOne({ stripeSessionId: session_id, patientId: req.patient._id });
+    if (!payment) throw new apiError(404, "Payment record not found");
+
+    return res.status(200).json(new apiResponse(200, {
+        status: payment.status,
+        amount: payment.amount,
+        currency: payment.currency,
+        appointmentId: payment.appointmentId,
+        processedAt: payment.processedAt,
+    }, "Payment status retrieved"));
+});
+
+// POST /api/v1/payment/webhook  — raw body required; must be registered before express.json()
+export const stripeWebhook = async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
+    if (!process.env.STRIPE_WEBHOOK_SECRET) return res.status(503).json({ error: "Webhook not configured" });
+
+    let event;
+    try {
+        const stripe = getStripe();
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+        console.error("Stripe webhook signature verification failed:", err.message);
+        return res.status(400).json({ error: "Invalid webhook signature" });
+    }
+
+    const obj = event.data.object;
+
+    try {
+        if (event.type === "checkout.session.completed") {
+            const stripeSessionId = obj.id;
+            const payment = await Payment.findOne({ stripeSessionId });
+
+            if (!payment) {
+                console.error(`Webhook: no payment record for session ${stripeSessionId}`);
+                return res.status(200).json({ received: true });
+            }
+
+            // Idempotent: already processed
+            if (payment.status === "completed") {
+                return res.status(200).json({ received: true });
+            }
+
+            // Verify payment status directly with Stripe (prevent replay attacks)
+            const stripe = getStripe();
+            const stripeSession = await stripe.checkout.sessions.retrieve(stripeSessionId);
+            if (stripeSession.payment_status !== "paid") {
+                return res.status(200).json({ received: true });
+            }
+
+            // Validate metadata integrity (prevent metadata tampering)
+            const meta = stripeSession.metadata || {};
+            if (
+                meta.patientId !== payment.patientId.toString() ||
+                meta.appointmentId !== payment.appointmentId.toString()
+            ) {
+                console.error(`Webhook: metadata mismatch for session ${stripeSessionId}`);
+                await logAudit({
+                    userId: payment.patientId,
+                    userRole: "patient",
+                    action: "payment_metadata_mismatch",
+                    resource: `appointment/${payment.appointmentId}`,
+                    ip: "stripe-webhook",
+                    result: "failure",
+                    metadata: { stripeSessionId },
+                });
+                return res.status(200).json({ received: true });
+            }
+
+            // Update database only after verified successful payment
+            payment.status = "completed";
+            payment.stripePaymentIntentId = stripeSession.payment_intent || "";
+            payment.processedAt = new Date();
+            await payment.save();
+
+            await logAudit({
+                userId: payment.patientId,
+                userRole: "patient",
+                action: "payment_completed",
+                resource: `appointment/${payment.appointmentId}`,
+                ip: "stripe-webhook",
+                result: "success",
+                metadata: { stripeSessionId, amount: payment.amount, currency: payment.currency },
+            });
+        }
+
+        if (event.type === "payment_intent.payment_failed") {
+            const paymentIntentId = obj.id;
+            const payment = await Payment.findOne({ stripePaymentIntentId: paymentIntentId });
+
+            if (payment && payment.status !== "completed") {
+                payment.status = "failed";
+                payment.processedAt = new Date();
+                await payment.save();
+
+                await logAudit({
+                    userId: payment.patientId,
+                    userRole: "patient",
+                    action: "payment_failed",
+                    resource: `appointment/${payment.appointmentId}`,
+                    ip: "stripe-webhook",
+                    result: "failure",
+                    metadata: { paymentIntentId },
+                });
+            }
+        }
+    } catch (err) {
+        console.error("Webhook processing error:", err.message);
+        return res.status(500).json({ error: "Webhook processing failed" });
+    }
+
+    return res.status(200).json({ received: true });
+};

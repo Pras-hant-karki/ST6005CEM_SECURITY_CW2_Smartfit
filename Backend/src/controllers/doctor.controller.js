@@ -9,6 +9,7 @@ import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
 import { trackAttempt } from "../utils/rateStore.js";
 import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
+import { logAudit } from "../services/auditLog.service.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
 import bcrypt from "bcrypt";
@@ -167,6 +168,8 @@ const createDoctorByAdmin = asyncHandler(async (req, res) => {
         html: `<p>Hello ${createddoctor.doctorname},</p><p>Your SmartFit doctor account has been created. Please log in and change your password immediately.</p><p><strong>Email:</strong> ${createddoctor.email}</p>`,
     });
 
+    logAudit({ userId: req.admin?._id, userRole: "admin", action: "admin_created_doctor", resource: `doctor/${doctor._id}`, ip: req.ip, result: "success", metadata: { doctorId: doctor._id } });
+
     return res.status(201).json(new apiResponse(201, createddoctor, "Doctor created successfully"));
 });
 
@@ -174,6 +177,7 @@ const deleteDoctorByAdmin = asyncHandler(async (req, res) => {
     const { doctorid } = req.params;
     const deletedDoctor = await Doctor.findByIdAndDelete(doctorid).select("-password -refreshtoken");
     if (!deletedDoctor) throw new apiError(404, "Doctor not found");
+    logAudit({ userId: req.admin?._id, userRole: "admin", action: "admin_deleted_doctor", resource: `doctor/${doctorid}`, ip: req.ip, result: "success", metadata: { doctorId: doctorid } });
     return res.status(200).json(new apiResponse(200, deletedDoctor, "Doctor deleted successfully"));
 });
 
@@ -237,6 +241,7 @@ const updateDoctorByAdmin = asyncHandler(async (req, res) => {
     await doctor.save();
 
     const updatedDoctor = await Doctor.findById(doctor._id).select("-password -refreshtoken -passwordHistory");
+    logAudit({ userId: req.admin?._id, userRole: "admin", action: "admin_updated_doctor", resource: `doctor/${doctorid}`, ip: req.ip, result: "success", metadata: { doctorId: doctorid } });
     return res.status(200).json(new apiResponse(200, updatedDoctor, "Doctor updated successfully"));
 });
 
@@ -361,6 +366,7 @@ const logindoctor = asyncHandler(async (req, res) => {
             doctor.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
         }
         await doctor.save({ validateBeforeSave: false });
+        logAudit({ userId: doctor._id, userRole: "doctor", action: "login_failed", resource: "doctor", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
         throw new apiError(401, "Invalid password");
     }
 
@@ -398,6 +404,8 @@ const logindoctor = asyncHandler(async (req, res) => {
         html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes. Do not share it.</p>`,
     });
 
+    logAudit({ userId: doctor._id, userRole: "doctor", action: "login_mfa_initiated", resource: "doctor", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .cookie("mfaToken", mfaToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
@@ -412,6 +420,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     const result = await verifyOTP(doctor.email, otp);
     if (!result.valid) {
+        logAudit({ userId: doctor._id, userRole: "doctor", action: "mfa_failed", resource: "doctor", ip: req.ip, result: "failure", metadata: { reason: result.reason } });
         if (result.reason === "expired") throw new apiError(401, "OTP expired. Please log in again.");
         if (result.reason === "too_many_attempts") throw new apiError(429, "Too many OTP attempts. Please log in again.");
         throw new apiError(401, "Invalid OTP");
@@ -427,6 +436,8 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
         html: logintemplate(doctor.doctorname),
     });
 
+    logAudit({ userId: doctor._id, userRole: "doctor", action: "login_success", resource: "doctor", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
@@ -437,6 +448,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
 const logoutdoctor = asyncHandler(async (req, res) => {
     await Doctor.findByIdAndUpdate(req.doctor?._id, { $unset: { refreshtoken: 1 } }, { new: true });
+    logAudit({ userId: req.doctor?._id, userRole: "doctor", action: "logout", resource: "doctor", ip: req.ip, result: "success" });
     return res
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
         .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
@@ -595,8 +607,10 @@ const updateprofile = asyncHandler(async (req, res) => {
 });
 
 const getalldoctorprofiledetails = asyncHandler(async (req, res) => {
-    const search = req.query.search?.trim() || "";
-    const query = search ? { doctorname: { $regex: search, $options: "i" } } : {};
+    const raw = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 100) : "";
+    // Escape regex metacharacters to prevent ReDoS attacks
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const query = escaped ? { doctorname: { $regex: escaped, $options: "i" } } : {};
     const doctors = await Doctor.find(query).select(
         "doctorname specialization department qualification experience consultationfee shift verificationdocument.profilepicture"
     );

@@ -8,6 +8,7 @@ import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
 import { trackAttempt } from "../utils/rateStore.js";
 import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
+import { logAudit } from "../services/auditLog.service.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
 import jwt from "jsonwebtoken";
@@ -126,6 +127,8 @@ const registeradmin = asyncHandler(async (req, res) => {
         html: welcomeemailtemplate(createdAdmin.adminname),
     });
 
+    logAudit({ userId: admin._id, userRole: "admin", action: "registration", resource: "admin", ip: req.ip, result: "success" });
+
     return res.status(201).json(new apiResponse(201, createdAdmin, "Admin registered successfully"));
 });
 
@@ -171,6 +174,7 @@ const loginadmin = asyncHandler(async (req, res) => {
             admin.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
         }
         await admin.save({ validateBeforeSave: false });
+        logAudit({ userId: admin._id, userRole: "admin", action: "login_failed", resource: "admin", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
         throw new apiError(401, "Password is not valid");
     }
 
@@ -208,6 +212,8 @@ const loginadmin = asyncHandler(async (req, res) => {
         html: `<p>Your SmartFit admin login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes.</p>`,
     });
 
+    logAudit({ userId: admin._id, userRole: "admin", action: "login_mfa_initiated", resource: "admin", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .cookie("mfaToken", mfaToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
@@ -222,6 +228,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     const result = await verifyOTP(admin.email, otp);
     if (!result.valid) {
+        logAudit({ userId: admin._id, userRole: "admin", action: "mfa_failed", resource: "admin", ip: req.ip, result: "failure", metadata: { reason: result.reason } });
         if (result.reason === "expired") throw new apiError(401, "OTP expired. Please log in again.");
         if (result.reason === "too_many_attempts") throw new apiError(429, "Too many OTP attempts. Please log in again.");
         throw new apiError(401, "Invalid OTP");
@@ -237,6 +244,8 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
         html: logintemplate(admin.adminname),
     });
 
+    logAudit({ userId: admin._id, userRole: "admin", action: "login_success", resource: "admin", ip: req.ip, result: "success" });
+
     return res
         .status(200)
         .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
@@ -247,6 +256,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
 const logoutadmin = asyncHandler(async (req, res) => {
     await Admin.findByIdAndUpdate(req.admin?._id, { $unset: { refreshtoken: 1 } }, { new: true });
+    logAudit({ userId: req.admin?._id, userRole: "admin", action: "logout", resource: "admin", ip: req.ip, result: "success" });
     return res
         .status(200)
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
