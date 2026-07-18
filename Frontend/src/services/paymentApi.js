@@ -6,7 +6,7 @@ import api from "./api";
 // straight to the shared `api` instance — axios uses an absolute URL as-is,
 // ignoring its configured baseURL, while still running the same interceptors.
 const PAYMENT_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || "http://192.168.1.67:8000/api/v1/patient"
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1/patient"
 ).replace(/\/patient\/?$/, "/payment");
 
 const getApiError = (err) => {

@@ -1,5 +1,5 @@
-import { createSlice } from "@reduxjs/toolkit";
-import { isPending, isFulfilled, isRejected } from "@reduxjs/toolkit";
+
+import { isPending, isFulfilled, isRejected, isAnyOf, createSlice } from "@reduxjs/toolkit";
 import {
   getProfileDetails,
   updateProfile,
