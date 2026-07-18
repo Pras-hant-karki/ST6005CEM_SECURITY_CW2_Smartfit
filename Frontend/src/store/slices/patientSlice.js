@@ -88,23 +88,29 @@ const patientSlice = createSlice({
       state.doctors = action.payload;
     })
 
-    builder.addMatcher(isPending, (state, action) => {
+    const patientThunks = [
+      getProfileDetails, updateProfile, updateProfilePic, sendOtpForUpdate,
+      verifyOtpForUpdate, updatePassword, sendForgotPasswordOtp, verifyForgotPasswordOtp,
+      resetForgottenPassword, getAllDoctors, getDoctorProfile, getAllDepartments, 
+      getdoctorbydepartment,
+    ];
+
+    builder.addMatcher(isAnyOf(...patientThunks.map((t) => t.pending)), (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isAnyOf(...patientThunks.map((t) => t.fulfilled)), (state) => {
       state.loading = false;
     });
 
-    builder.addMatcher(isRejected, (state, action) => {
+    builder.addMatcher(isAnyOf(...patientThunks.map((t) => t.rejected)), (state, action) => {
       state.loading = false;
 
       const payload = action.payload;
       if (payload?.message) state.error = payload.message;
       else if (typeof payload === "string") state.error = payload;
     });
-
 
   }
 });

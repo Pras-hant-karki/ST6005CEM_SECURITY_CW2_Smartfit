@@ -30,6 +30,8 @@ import AllLabTests from './pages/AllLabTests'
 import LabTestDetails from './pages/LabTestDetails'
 import MedicalRecords from './pages/MedicalRecords'
 import BillingHistory from './pages/BillingHistory'
+import PaymentSuccess from './pages/PaymentSuccess'
+import PaymentCancel from './pages/PaymentCancel'
 
 const router = createBrowserRouter([
   {
@@ -137,6 +139,22 @@ const router = createBrowserRouter([
         )
       },
       {
+        path: '/payment/success',
+        element: (
+          <AuthLayout authentication={true}>
+            <PaymentSuccess />
+          </AuthLayout>
+        )
+      },
+      {
+        path: '/payment/cancel',
+        element: (
+          <AuthLayout authentication={true}>
+            <PaymentCancel />
+          </AuthLayout>
+        )
+      },
+      {
         path: '/prescriptions',
         element: (
           <AuthLayout authentication={true}>
@@ -171,11 +189,19 @@ const router = createBrowserRouter([
 
       {
         path: '/login',
-        element: <Login />
+        element: (
+          <AuthLayout authentication={false}>
+            <Login />
+          </AuthLayout>
+        )
       },
       {
         path: '/register',
-        element: <Register />
+        element: (
+          <AuthLayout authentication={false}>
+            <Register />
+          </AuthLayout>
+        )
       },
       {
         path: '/update-password',

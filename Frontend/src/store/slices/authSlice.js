@@ -6,7 +6,8 @@ import {
   getCurrentPatient,
   verifyMfaOtp,
 } from "../../services/patientApi";
-import { isPending, isFulfilled, isRejected } from "@reduxjs/toolkit";
+import { isAnyOf } from "@reduxjs/toolkit";
+
 
 const initialState = {
   user: null,
@@ -74,20 +75,23 @@ const authSlice = createSlice({
       state.error = null;
     });
 
-    builder.addMatcher(isPending, (state, action) => {
+    const authThunks = [registerPatient, loginPatient, logoutPatient, getCurrentPatient, 
+      verifyMfaOtp];
+
+    builder.addMatcher(isAnyOf(...authThunks.map((t) => t.pending)), (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isAnyOf(...authThunks.map((t) => t.fulfilled)), (state) => {
       state.loading = false;
     });
 
-    builder.addMatcher(isRejected, (state, action) => {
+    builder.addMatcher(isAnyOf(...authThunks.map((t) => t.rejected)), (state, action) => {
       state.loading = false;
       state.error = action.payload;
-      
     });
+
   },
 });
 

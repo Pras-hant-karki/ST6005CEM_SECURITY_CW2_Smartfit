@@ -2,20 +2,18 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import toast, { Toaster } from "react-hot-toast";
 import {
-  ArrowLeft,
   Building2,
   CalendarDays,
   CreditCard,
   FileText,
-  Landmark,
   Loader2,
   LockKeyhole,
-  Smartphone,
-  WalletCards,
   X,
 } from "lucide-react";
 import PatientPortalLayout from "@/components/custom/PatientPortalLayout";
 import { getAllAppointments } from "@/services/appointmentApi";
+import { createCheckoutSession } from "@/services/paymentApi";
+import { getPaymentErrorMessage } from "../utils/formatError";
 
 const formatDate = (value) => {
   if (!value) return "Date not set";
@@ -56,27 +54,6 @@ const statusClass = (status) => {
   return "bg-amber-100 text-amber-800";
 };
 
-const paymentMethods = [
-  {
-    id: "card",
-    title: "Card Payment",
-    subtitle: "Visa, Mastercard, debit or credit card",
-    icon: CreditCard,
-  },
-  {
-    id: "stripe",
-    title: "Stripe Checkout",
-    subtitle: "Secure hosted payment page",
-    icon: WalletCards,
-  },
-  {
-    id: "wallet",
-    title: "Digital Wallet",
-    subtitle: "Connect Khalti/eSewa later",
-    icon: Smartphone,
-  },
-];
-
 const DetailRow = ({ label, value }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-4">
     <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
@@ -85,14 +62,27 @@ const DetailRow = ({ label, value }) => (
 );
 
 const Gateway = ({ invoice, onClose }) => {
-  const [step, setStep] = useState(1);
-  const [method, setMethod] = useState("card");
+  const dispatch = useDispatch();
+  const { creatingSession } = useSelector((state) => state.payment || {});
+  const [submitting, setSubmitting] = useState(false);
   const fee = amount(invoice);
   const platformFee = fee ? Math.round(fee * 0.02) : 0;
   const total = fee + platformFee;
+  const isProcessing = submitting || creatingSession;
 
-  const finishPayment = () => {
-    toast("Payment processing is not connected yet. Backend payment intent/webhook support is needed next.");
+  const finishPayment = async () => {
+    if (isProcessing) return;
+    setSubmitting(true);
+    try {
+      const result = await dispatch(createCheckoutSession(invoice._id));
+      if (result.meta?.requestStatus === "fulfilled" && result.payload?.url) {
+        window.location.assign(result.payload.url);
+        return;
+      }
+      toast.error(getPaymentErrorMessage(result.payload));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -101,7 +91,8 @@ const Gateway = ({ invoice, onClose }) => {
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-900"
+          disabled={isProcessing}
+          className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50"
           aria-label="Close payment gateway"
         >
           <X className="h-5 w-5" />
@@ -115,7 +106,7 @@ const Gateway = ({ invoice, onClose }) => {
               </div>
               <div>
                 <h2 className="text-xl font-black text-slate-950">SmartFit Checkout</h2>
-                <p className="text-sm text-slate-500">Step {step} of 2 - payment is collected by SmartFit</p>
+                <p className="text-sm text-slate-500">Secure payment powered by Stripe</p>
               </div>
             </div>
           </div>
@@ -141,141 +132,54 @@ const Gateway = ({ invoice, onClose }) => {
               </div>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600">
-                Card details should be handled by a payment provider. SmartFit should only store the confirmed payment result.
+                You'll be redirected to Stripe's secure checkout page to enter your card details. SmartFit never sees or stores your card number.
               </div>
             </aside>
 
             <section className="p-6 sm:p-8">
-              <div className="mb-6 flex items-center justify-between gap-4 pr-10">
-                <div>
-                  <h3 className="text-2xl font-black text-slate-950">{step === 1 ? "Review invoice" : "Choose payment method"}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{step === 1 ? "Confirm the visit and amount before continuing." : "This form is UI-only until backend payment support is added."}</p>
-                </div>
-                <div className="flex gap-1.5">
-                  {[1, 2].map((item) => (
-                    <span
-                      key={item}
-                      className={`h-2 w-10 rounded-full transition ${step >= item ? "bg-emerald-600" : "bg-slate-200"}`}
-                    />
-                  ))}
-                </div>
+              <div className="mb-6">
+                <h3 className="text-2xl font-black text-slate-950">Review invoice</h3>
+                <p className="mt-1 text-sm text-slate-500">Confirm the visit and amount before continuing to Stripe.</p>
               </div>
 
-              {step === 1 ? (
-                <div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Invoice Details</p>
-                    <h4 className="mt-3 text-2xl font-black text-slate-950">{invoiceTitle(invoice)}</h4>
-                    <p className="mt-2 text-slate-600">
-                      With {getDoctorName(invoice)} at SmartFit Medical Institute.
-                    </p>
-                  </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Invoice Details</p>
+                <h4 className="mt-3 text-2xl font-black text-slate-950">{invoiceTitle(invoice)}</h4>
+                <p className="mt-2 text-slate-600">
+                  With {getDoctorName(invoice)} at SmartFit Medical Institute.
+                </p>
+              </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <DetailRow label="Invoice" value={invoiceCode(invoice)} />
-                    <DetailRow label="Issued" value={formatDate(invoice.createdAt || invoice.appointmentdate)} />
-                    <DetailRow label="Appointment Date" value={formatDate(invoice.appointmentdate)} />
-                    <DetailRow label="Appointment Time" value={invoice.appointmenttime || "Time not set"} />
-                  </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <DetailRow label="Invoice" value={invoiceCode(invoice)} />
+                <DetailRow label="Issued" value={formatDate(invoice.createdAt || invoice.appointmentdate)} />
+                <DetailRow label="Appointment Date" value={formatDate(invoice.appointmentdate)} />
+                <DetailRow label="Appointment Time" value={invoice.appointmenttime || "Time not set"} />
+              </div>
 
-                  <div className="sticky bottom-0 -mx-6 mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 bg-[#fbfaff]/95 px-6 py-4 backdrop-blur sm:-mx-8 sm:flex-row sm:px-8">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="flex-1 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="flex-1 rounded-xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/15 hover:bg-emerald-700"
-                    >
-                      Continue
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to invoice
-                  </button>
-
-                  <div className="grid gap-3">
-                    {paymentMethods.map((item) => {
-                      const Icon = item.icon;
-                      const selected = method === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setMethod(item.id)}
-                          className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${
-                            selected
-                              ? "border-emerald-300 bg-emerald-50"
-                              : "border-slate-200 bg-white hover:border-emerald-200"
-                          }`}
-                        >
-                          <span className={`grid h-11 w-11 place-items-center rounded-xl ${selected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-                            <Icon className="h-5 w-5" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-black text-slate-950">{item.title}</span>
-                            <span className="mt-1 block text-sm text-slate-500">{item.subtitle}</span>
-                          </span>
-                          <span className={`h-4 w-4 rounded-full border-2 ${selected ? "border-emerald-600 bg-emerald-600" : "border-slate-300"}`} />
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {method === "card" && (
-                    <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
-                      <input className="h-12 rounded-xl border border-slate-200 px-4 font-semibold outline-none focus:border-emerald-400 sm:col-span-2" placeholder="Card number" />
-                      <input className="h-12 rounded-xl border border-slate-200 px-4 font-semibold outline-none focus:border-emerald-400" placeholder="MM / YY" />
-                      <input className="h-12 rounded-xl border border-slate-200 px-4 font-semibold outline-none focus:border-emerald-400" placeholder="CVC" />
-                      <input className="h-12 rounded-xl border border-slate-200 px-4 font-semibold outline-none focus:border-emerald-400 sm:col-span-2" placeholder="Name on card" />
-                    </div>
+              <div className="sticky bottom-0 -mx-6 mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 bg-[#fbfaff]/95 px-6 py-4 backdrop-blur sm:-mx-8 sm:flex-row sm:px-8">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={isProcessing}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={finishPayment}
+                  disabled={isProcessing}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/15 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <LockKeyhole className="h-5 w-5" />
                   )}
-
-                  {method === "stripe" && (
-                    <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-                      <p className="flex items-center gap-2 font-black text-indigo-900">
-                        <Landmark className="h-5 w-5" />
-                        Stripe checkout will open here after backend support is added.
-                      </p>
-                      <p className="mt-2 text-sm text-indigo-700">
-                        The server should create a payment intent and confirm invoice status from a webhook.
-                      </p>
-                    </div>
-                  )}
-
-                  {method === "wallet" && (
-                    <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4">
-                      <p className="font-black text-amber-900">Wallet providers can be connected later.</p>
-                      <p className="mt-2 text-sm text-amber-700">
-                        This UI is ready for Nepal payment options, but no real wallet API is connected yet.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="sticky bottom-0 -mx-6 mt-6 border-t border-slate-100 bg-[#fbfaff]/95 px-6 py-4 backdrop-blur sm:-mx-8 sm:px-8">
-                    <button
-                      type="button"
-                      onClick={finishPayment}
-                      className="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white shadow-lg shadow-emerald-600/15 hover:bg-emerald-700"
-                    >
-                      <LockKeyhole className="h-5 w-5" />
-                      Pay NPR {total.toLocaleString("en-US")}
-                    </button>
-                  </div>
-                </div>
-              )}
+                  {isProcessing ? "Redirecting to Stripe..." : `Pay NPR ${total.toLocaleString("en-US")}`}
+                </button>
+              </div>
             </section>
           </div>
         </div>

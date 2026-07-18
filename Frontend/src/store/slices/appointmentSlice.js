@@ -50,18 +50,22 @@ const appointmentSlice = createSlice({
       state.appointmentDetails = action.payload;
     });
 
-    builder.addMatcher(isPending, (state, action) => {
+    const appointmentThunks = [checkAvailability, getAllAppointments, createAppointment, 
+      cancelAppointment, updateAppointment, getAppointmentDetails];
+
+    builder.addMatcher(isAnyOf(...appointmentThunks.map((t) => t.pending)), (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isAnyOf(...appointmentThunks.map((t) => t.fulfilled)), (state) => {
       state.loading = false;
     });
 
-    builder.addMatcher(isRejected, (state, action) => {
+    builder.addMatcher(isAnyOf(...appointmentThunks.map((t) => t.rejected)), (state, action) => {
       state.loading = false;
       state.error = action.payload;
     });
+
   }});
   export default appointmentSlice.reducer;

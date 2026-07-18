@@ -4,6 +4,7 @@ import appointmentReducer from './slices/appointmentSlice'
 import authReducer from './slices/authSlice'
 import prescriptionReducer from './slices/prescriptionSlice'
 import labtestReducer from './slices/labtestSlice'
+import paymentReducer from './slices/paymentSlice'
 const store = configureStore({
   reducer: {
     patient: patientReducer,
@@ -11,6 +12,7 @@ const store = configureStore({
     auth:authReducer,
     prescription: prescriptionReducer,
     labtest: labtestReducer,
+    payment: paymentReducer,
   },
 })
 

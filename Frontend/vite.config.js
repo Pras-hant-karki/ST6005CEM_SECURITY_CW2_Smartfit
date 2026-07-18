@@ -5,7 +5,7 @@ import path from "path"
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
-  const apiTarget = env.VITE_PROXY_API_TARGET || "http://localhost:8000"
+  const apiTarget = env.VITE_PROXY_API_TARGET || "http://192.168.1.67:8000"
 
   return {
     plugins: [
@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      host: "0.0.0.0",
+      port: 5173,
       proxy: {
         "/api": {
           target: apiTarget,

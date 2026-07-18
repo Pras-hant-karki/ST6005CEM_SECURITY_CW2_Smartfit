@@ -1,21 +1,11 @@
 import { useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import axios from "axios";
 import { Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import HCaptcha from "@/components/ui/HCaptcha";
 import { loginPatient, verifyMfaOtp } from "@/services/patientApi";
 import { formatErrorMessage } from "../utils/formatError";
-
-// Direct axios for the doctor role-detection probe (original multi-role pattern).
-// Goes directly to the backend so cookies are scoped to the backend origin,
-// allowing the doctor portal to pick them up after the redirect.
-const doctorAxios = axios.create({
-    baseURL: import.meta.env.VITE_DOCTOR_API_BASE_URL || "http://localhost:8000/api/v1/doctor",
-    withCredentials: true,
-    timeout: 10000,
-});
 
 export default function Login() {
     const dispatch = useDispatch();
@@ -25,7 +15,6 @@ export default function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [loginError, setLoginError] = useState(null);
     const [mfaRequired, setMfaRequired] = useState(false);
-    const [pendingRole, setPendingRole] = useState(null); // "patient" | "doctor"
     const [otp, setOtp] = useState("");
     const [otpLoading, setOtpLoading] = useState(false);
     const [formData, setFormData] = useState({ email: "", password: "" });
@@ -46,25 +35,6 @@ export default function Login() {
         const password = formData.password;
         const captchaPayload = captchaToken ? { "h-captcha-response": captchaToken } : {};
 
-        // 1. Probe doctor credentials first (original multi-role detection pattern).
-        try {
-            const res = await doctorAxios.post("/login", { email, doctorusername: email, password, ...captchaPayload });
-            if (res.data?.data?.captchaRequired) {
-                setCaptchaRequired(true);
-                return;
-            }
-            if (res.data?.data?.mfaRequired) {
-                setPendingRole("doctor");
-                setMfaRequired(true);
-                setCaptchaRequired(false);
-                setCaptchaToken("");
-                return;
-            }
-        } catch {
-            // Not a doctor — fall through to patient login.
-        }
-
-        // 2. Patient login.
         const result = await dispatch(loginPatient({ email, password, ...captchaPayload }));
 
         if (result.meta?.requestStatus === "fulfilled") {
@@ -74,7 +44,6 @@ export default function Login() {
                 return;
             }
             if (data?.mfaRequired) {
-                setPendingRole("patient");
                 setMfaRequired(true);
                 setCaptchaRequired(false);
                 setCaptchaToken("");
@@ -93,25 +62,12 @@ export default function Login() {
         setOtpLoading(true);
 
         try {
-            if (pendingRole === "doctor") {
-                // Complete doctor MFA directly, then redirect to doctor portal.
-                // Session cookies are set by the backend — the doctor portal picks them up.
-                await doctorAxios.post("/login/verify-mfa", { otp: otp.trim() });
-                window.location.assign(
-                    import.meta.env.VITE_DOCTOR_PORTAL_URL || "http://localhost:5175/"
-                );
-                return;
-            }
-
-            // Patient MFA.
             const result = await dispatch(verifyMfaOtp({ otp: otp.trim() }));
             if (result.meta?.requestStatus === "fulfilled") {
                 navigate("/dashboard");
                 return;
             }
             setLoginError(result.payload || "OTP verification failed. Please try again.");
-        } catch (err) {
-            setLoginError(err.response?.data?.message || "OTP verification failed. Please try again.");
         } finally {
             setOtpLoading(false);
         }
