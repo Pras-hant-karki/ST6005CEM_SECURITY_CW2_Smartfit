@@ -18,13 +18,13 @@ const otpTemplate = (otp) => `
           ${otp}
         </span>
       </div>
-      <p>This OTP is valid for 2 minutes. If you didn’t request it, please ignore this email.</p>
+      <p>This OTP is valid for 5 minutes. If you didn’t request it, please ignore this email.</p>
       <p style="margin-top: 30px;">— SmartFit HMS Team</p>
     </div>
   </div>
 `;
 
-const forgetpasswordotptemplate = (otp) => `
+const forgetpasswordotptemplate = (otp, greeting = "Hi") => `
   <!DOCTYPE html>
 <html>
   <head>
@@ -62,10 +62,10 @@ const forgetpasswordotptemplate = (otp) => `
   <body>
     <div class="container">
       <h2>Password Reset Request</h2>
-      <p>Hi,</p>
+      <p>${escapeHtml(greeting)},</p>
       <p>You requested to reset your password. Please use the OTP below to proceed:</p>
       <p class="otp">${otp}</p>
-      <p>This OTP will expire in 2 minutes for your security. If you did not request this, please ignore this email.</p>
+      <p>This OTP will expire in 5 minutes for your security. If you did not request this, please ignore this email.</p>
       <p>Thank you,<br />SmartFit Team</p>
       <div class="footer">
         This is an automated email. Please do not reply.

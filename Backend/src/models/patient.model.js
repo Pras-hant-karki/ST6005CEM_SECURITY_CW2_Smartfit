@@ -30,14 +30,16 @@ const patientSchema = new Schema({
         select: false,
     },
     phonenumber: {
-        type: String,  // BUG-012 fix: String preserves leading zeros
+        type: String,  
         required: true,
         maxlength: 15,
     },
-    sex: {
+        sex: {
         type: String,
         required: true,
+        enum: ["Male", "Female", "Others"], 
     },
+
     age: {
         type: Number,
         required: true,
@@ -92,17 +94,16 @@ patientSchema.methods.generateaccesstoken = function () {
         email: this.email,
         patientname: this.patientname,
         patientusername: this.patientusername,
-        role: "patient"
+        role: "patient" // specified role
     },
         process.env.ACCESS_TOKEN_SECRET,
         { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
     )
 }
 
-// BUG-001 fix: role claim included so token renewal can verify role without a DB round-trip.
 patientSchema.methods.generaterefreshtoken = function () {
     return jwt.sign(
-        { _id: this._id, role: "patient" },
+        { _id: this._id, role: "patient" },  // specified role
         process.env.REFRESH_TOKEN_SECRET,
         { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
     )

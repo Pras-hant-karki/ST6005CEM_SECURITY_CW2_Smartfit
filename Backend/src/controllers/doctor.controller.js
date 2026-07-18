@@ -50,7 +50,7 @@ const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
 const PASSWORD_EXPIRY_DAYS = 90;
 
 const generateaccesstokenandrefreshtoken = async (doctorId) => {
-    // BUG-002 fix: select "+refreshtoken" to allow comparison on renewal.
+    // BUG-001 fix: select "+refreshtoken" to allow comparison on renewal.
     const doctor = await Doctor.findById(doctorId).select("+refreshtoken");
     const accesstoken = doctor.generateaccesstoken();
     const refreshtoken = doctor.generaterefreshtoken();
@@ -309,6 +309,7 @@ const registerdoctor = asyncHandler(async (req, res) => {
         specialization,
         shift: shiftarray,
         passwordChangedAt: new Date(),
+        isApproved: false,
     });
 
     if (!doctor) throw new apiError(500, "Doctor registration failed");
@@ -334,8 +335,9 @@ const logindoctor = asyncHandler(async (req, res) => {
         $or: [{ email }, { doctorusername }],
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
-    if (!doctor) throw new apiError(404, "Doctor not found");
-
+    if (!doctor) throw new apiError(401, "Invalid credentials");
+    if (!doctor.isApproved) throw new apiError(403, "Account pending admin approval");
+    // admin approval status visible
     if (doctor.lockedUntil && doctor.lockedUntil > new Date()) {
         const minutesLeft = Math.ceil((doctor.lockedUntil - Date.now()) / 60000);
         throw new apiError(423, `Account locked. Try again in ${minutesLeft} minute(s).`);
@@ -367,7 +369,7 @@ const logindoctor = asyncHandler(async (req, res) => {
         }
         await doctor.save({ validateBeforeSave: false });
         logAudit({ userId: doctor._id, userRole: "doctor", action: "login_failed", resource: "doctor", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
-        throw new apiError(401, "Invalid password");
+        throw new apiError(401, "Invalid credentials");
     }
 
     doctor.loginAttempts = 0;
@@ -401,7 +403,7 @@ const logindoctor = asyncHandler(async (req, res) => {
     sendDoctorMail({
         to: doctor.email,
         subject: "SmartFit — Login Verification Code",
-        html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes. Do not share it.</p>`,
+        html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 5 minutes. Do not share it.</p>`,
     });
 
     logAudit({ userId: doctor._id, userRole: "doctor", action: "login_mfa_initiated", resource: "doctor", ip: req.ip, result: "success" });
@@ -471,7 +473,6 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     if (decodetoken.role !== "doctor") throw new apiError(401, "Doctor session required");
 
-    // BUG-002 fix: must select "+refreshtoken".
     const doctor = await Doctor.findById(decodetoken._id).select("+refreshtoken");
     if (!doctor) throw new apiError(404, "Doctor not found");
 
@@ -514,12 +515,19 @@ const updatepassword = asyncHandler(async (req, res) => {
 
     const updatedHistory = [doctor.password, ...(doctor.passwordHistory || [])].slice(0, 5);
     doctor.passwordHistory = updatedHistory;
+    doctor.passwordHistory = updatedHistory;
     doctor.password = newpassword;
+    doctor.refreshtoken = null;
     doctor.passwordChangedAt = new Date();
     await doctor.save({ validateBeforeSave: false });
 
-    return res.status(200).json(new apiResponse(200, {}, "Password updated successfully"));
+    return res
+        .status(200)
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password updated. Please log in again."));
 });
+
 
 const resetForgottenPassword = asyncHandler(async (req, res) => {
     const { newpassword } = req.body;
@@ -543,14 +551,18 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     const updatedHistory = [doctor.password, ...(doctor.passwordHistory || [])].slice(0, 5);
     doctor.passwordHistory = updatedHistory;
     doctor.password = newpassword;
+    doctor.refreshtoken = null;
     doctor.passwordChangedAt = new Date();
     await doctor.save({ validateBeforeSave: false });
 
     return res
         .status(200)
         .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
-        .json(new apiResponse(200, {}, "Password reset successfully"));
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password reset successfully. Please log in again."));
 });
+
 
 const getdoctorprofiledetails = asyncHandler(async (req, res) => {
     const { doctorid } = req.params;
@@ -669,7 +681,8 @@ const updatedocument = asyncHandler(async (req, res) => {
 
 const getdoctorbydept = asyncHandler(async (req, res) => {
     const { deptname } = req.params;
-    const doctors = await Doctor.find({ department: deptname }).select(
+    const doctors = await Doctor.find({ department: deptname.toLowerCase() }).select(
+
         "doctorname specialization department qualification experience consultationfee shift verificationdocument.profilepicture"
     );
     if (!doctors) throw new apiError(404, "No doctors found for the given department");

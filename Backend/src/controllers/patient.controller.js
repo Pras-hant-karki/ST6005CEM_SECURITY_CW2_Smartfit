@@ -53,7 +53,7 @@ const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const PASSWORD_EXPIRY_DAYS = 90;
 
 const generateaccesstokenandrefreshtoken = async (patientId) => {
-    // BUG-002 fix: select "+refreshtoken" so it can be stored and compared on renewal.
+    // BUG-001 fix: select "+refreshtoken" so it can be stored and compared on renewal.
     const patient = await Patient.findById(patientId).select("+refreshtoken");
     const accesstoken = patient.generateaccesstoken();
     const refreshtoken = patient.generaterefreshtoken();
@@ -156,7 +156,10 @@ const loginPatient = asyncHandler(async (req, res) => {
         $or: [{ patientusername }, { email }],
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
-    if (!patient) throw new apiError(404, "Patient not found");
+    if (!patient) throw new apiError(401, "Invalid credentials");
+    // when we return the same status and message as a wrong password means 
+    // a stranger can no longer tell whether this email is registered
+
 
     // Account lockout check
     if (patient.lockedUntil && patient.lockedUntil > new Date()) {
@@ -192,7 +195,11 @@ const loginPatient = asyncHandler(async (req, res) => {
         }
         await patient.save({ validateBeforeSave: false });
         logAudit({ userId: patient._id, userRole: "patient", action: "login_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
-        throw new apiError(401, "Invalid password");
+                throw new apiError(401, "Invalid credentials");
+        // matching wording on both failure paths removes the last remaining clue 
+        // (the message text itself) that could distinguish the two cases
+
+        
     }
 
     // Reset lockout on success
@@ -230,7 +237,7 @@ const loginPatient = asyncHandler(async (req, res) => {
     sendPatientMail({
         to: patient.email,
         subject: "SmartFit — Login Verification Code",
-        html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 2 minutes. Do not share it with anyone.</p>`,
+        html: `<p>Your SmartFit login verification code is: <strong>${otp}</strong></p><p>It expires in 5 minutes. Do not share it with anyone.</p>`,
     });
 
     logAudit({ userId: patient._id, userRole: "patient", action: "login_mfa_initiated", resource: "patient", ip: req.ip, result: "success" });
@@ -308,7 +315,6 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     if (decoded.role !== "patient") throw new apiError(401, "Patient session required");
 
-    // BUG-002 fix: must select "+refreshtoken" to compare stored token.
     const patient = await Patient.findById(decoded._id).select("+refreshtoken");
     if (!patient) throw new apiError(404, "Patient not found");
 
@@ -351,11 +357,17 @@ const updatepassword = asyncHandler(async (req, res) => {
     // Push current hash to history before changing
     const updatedHistory = [patient.password, ...(patient.passwordHistory || [])].slice(0, 5);
     patient.passwordHistory = updatedHistory;
+
     patient.password = newpassword;
+    patient.refreshtoken = null;  // revoke all existing sessions
     patient.passwordChangedAt = new Date();
     await patient.save({ validateBeforeSave: false });
 
-    return res.status(200).json(new apiResponse(200, {}, "Password updated successfully"));
+    return res
+        .status(200)
+        .clearCookie("accessToken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshToken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password updated. Please log in again."));
 });
 
 const resetForgottenPassword = asyncHandler(async (req, res) => {
@@ -381,15 +393,18 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     const updatedHistory = [user.password, ...(user.passwordHistory || [])].slice(0, 5);
     user.passwordHistory = updatedHistory;
     user.password = newpassword;
+    user.refreshtoken = null;
     user.passwordChangedAt = new Date();
     await user.save({ validateBeforeSave: false });
-
-    logAudit({ userId: req.user?._id, userRole: req.userRole || "patient", action: "password_reset", resource: "patient", ip: req.ip, result: "success" });
-
+    logAudit({ userId: req.user?._id, userRole: req.userRole || "patient", action: "password_reset", 
+        resource: "patient", ip: req.ip, result: "success" });
     return res
         .status(200)
         .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
-        .json(new apiResponse(200, {}, "Password reset successfully"));
+        .clearCookie("accessToken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshToken", CLEAR_COOKIE_OPTIONS)
+        // all 3 tokens are refreshed now, so user must log in again.
+        .json(new apiResponse(200, {}, "Password reset successfully. Please log in again."));
 });
 
 const updateprofile = asyncHandler(async (req, res) => {

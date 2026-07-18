@@ -53,17 +53,16 @@ adminSchema.methods.generateaccesstoken = function () {
       email: this.email,
       adminname: this.adminname,
       adminusername: this.adminusername,
-      role: "admin",
+      role: "admin", // specified role
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
   );
 };
 
-// BUG-001 fix: role claim included.
 adminSchema.methods.generaterefreshtoken = function () {
   return jwt.sign(
-    { _id: this._id, role: "admin" },
+    { _id: this._id, role: "admin" }, // specified role
     process.env.REFRESH_TOKEN_SECRET,
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );

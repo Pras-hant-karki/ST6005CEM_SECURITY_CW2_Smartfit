@@ -8,6 +8,7 @@ import generateOtp from "../utils/otpgenerator.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import { Patient } from "../models/patient.model.js";
 import { Doctor } from "../models/doctor.model.js";
+import { Admin } from "../models/admin.model.js";
 import { forgetpasswordotptemplate, otpTemplate } from "../utils/emailtemplate.js";
 import jwt from "jsonwebtoken";
 
@@ -73,12 +74,26 @@ const sendForgetPasswordOtp = asyncHandler(async (req, res) => {
     const query = email ? { email } : { phonenumber };
     const patient = await Patient.findOne(query);
     const doctor = await Doctor.findOne(query);
+    const admin = await Admin.findOne(query);
 
-    if (!patient && !doctor) throw new apiError(404, "User not found");
+    if (!patient && !doctor && !admin) {
+        return res.status(200).json(new apiResponse(200, {}, "If an account with these details exists, an OTP has been sent."));
+    }
 
     const user = {};
-    if (patient) { user.id = patient._id; user.role = "patient"; user.email = patient.email; }
-    if (doctor) { user.id = doctor._id; user.role = "doctor"; user.email = doctor.email; }
+    if (patient) {
+        user.id = patient._id; user.role = "patient"; user.email = patient.email; user.name = patient.patientname;
+    } else if (doctor) {
+    // chaining with else-if means only the first match is kept, nothing after it can overwrite it anymore
+        user.id = doctor._id; user.role = "doctor"; user.email = doctor.email; user.name = doctor.doctorname;
+    } else if (admin) {
+        user.id = admin._id; user.role = "admin"; user.email = admin.email; user.name = admin.adminname;
+    }
+
+    const greeting =
+        user.role === "doctor" ? `Hello Dr. ${user.name}` :
+        user.role === "admin" ? "Hello Admin" :
+        `Hello ${user.name}`;
 
     const tempToken = jwt.sign(
         { _id: user.id, role: user.role },
@@ -92,15 +107,15 @@ const sendForgetPasswordOtp = asyncHandler(async (req, res) => {
     const response = await sendMail({
         to: user.email,
         subject: "Your SmartFit OTP Code to Reset Password",
-        html: forgetpasswordotptemplate(otp),
+        html: forgetpasswordotptemplate(otp, greeting),
     });
     if (!response) throw new apiError(500, "Failed to send OTP");
 
-    // BUG-005 fix: tempToken only in HttpOnly cookie — NOT returned in JSON body.
     return res
         .status(200)
         .cookie("tempToken", tempToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
-        .json(new apiResponse(200, {}, "OTP sent successfully"));
+        .json(new apiResponse(200, {}, "OTP sent successfully")); 
+        //empty body — token lives only in HttpOnly cookie
 });
 
 const verifyForgotPasswordOtp = asyncHandler(async (req, res) => {
@@ -118,10 +133,19 @@ const verifyForgotPasswordOtp = asyncHandler(async (req, res) => {
     }
 
     clearOTP(email);
+
+    const decoded = jwt.decode(req.cookies?.tempToken);
+    const freshTempToken = jwt.sign(
+        { _id: decoded._id, role: decoded.role },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: "5m" }
+    );
+
     return res
         .status(200)
-        .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
+        .cookie("tempToken", freshTempToken, { ...CLEAR_COOKIE_OPTIONS, maxAge: 5 * 60 * 1000 })
         .json(new apiResponse(200, {}, "OTP verified successfully"));
 });
+
 
 export { sendotp, verifyotp, verifyForgotPasswordOtp, sendForgetPasswordOtp };

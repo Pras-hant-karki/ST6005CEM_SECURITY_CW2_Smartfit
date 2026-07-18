@@ -66,17 +66,38 @@ const createAppointment = asyncHandler(async (req, res) => {
   const doctor = await Doctor.findById(doctorid);
   if (!doctor) throw new apiError(404, "Doctor not found");
 
+  const appointmentDateObj = new Date(appointmentdate);
+  if (isNaN(appointmentDateObj.getTime()) || appointmentDateObj <= new Date()) {
+    throw new apiError(400, "Appointment date must be a valid future date");
+  }
+  // rejects the past date booking in present time zone, 
+  // but allows future date booking in any time zone
+
+const requestedDay = appointmentDateObj.toLocaleDateString("en-US", { weekday: "long" });
+  const dayShifts = doctor.shift.filter((s) => s.day === requestedDay);
+  const validSlots = dayShifts.flatMap((s) => {
+  const start = parseTimeToMinutes(s.starttime);
+  const end = parseTimeToMinutes(s.endtime);
+  const interval = Number(s.patientslot) || 30;
+  const slots = [];
+  for (let m = start; m < end; m += interval) slots.push(formatMinutesToTime(m));
+  return slots;
+});
+if (!validSlots.includes(appointmenttime)) {
+  throw new apiError(400, "Doctor is not available at the requested time");
+}
+
   try {
-    const created = await Appointment.create({
-      patient: req.patient._id,
-      doctor: doctor._id,
-      appointmentdate: new Date(appointmentdate),
-      appointmenttime,
-      symptoms,
-      medicalhistory: medicalhistory || "None",
-      uniquecode: generateOtp(),
-      status: "Confirmed",
-    });
+      const created = await Appointment.create({
+        patient: req.patient._id,
+        doctor: doctor._id,
+        appointmentdate: appointmentDateObj,
+        appointmenttime,
+        symptoms,
+        medicalhistory: medicalhistory || "None",
+        uniquecode: generateOtp(),
+        status: "Confirmed",
+      });
 
     sendMail({
       to: req.patient.email,
@@ -207,14 +228,20 @@ const cancelappointment = asyncHandler(async (req, res) => {
   )
     throw new apiError(403, "Not allowed");
 
+// fixed — refuse if it's already cancelled or already completed
+  if (appointment.status === "Cancelled") throw new apiError(
+    400, "Appointment is already cancelled");
+  if (appointment.status === "Completed") throw new apiError(
+    400, "Cannot modify a completed appointment");
+
   appointment.status = "Cancelled";
   appointment.deleteafter = new Date(
-    Date.now() + 24 * 60 * 60 * 1000
-  );
-
-  await appointment.save();
-
-  logAudit({ userId: req.patient?._id || req.doctor?._id, userRole: req.patient ? "patient" : "doctor", action: "appointment_cancelled", resource: `appointment/${appointmentid}`, ip: req.ip, result: "success" });
+    Date.now() + 24 * 60 * 60 * 1000);
+    await appointment.save();
+    // now appointment status saved in real time in database, and will be deleted after 24 hours
+  logAudit({ userId: req.patient?._id || req.doctor?._id, userRole: 
+    req.patient ? "patient" : "doctor", action: "appointment_cancelled", 
+    resource: `appointment/${appointmentid}`, ip: req.ip, result: "success" });
 
   sendMail({
     to: appointment.patient.email,
@@ -239,6 +266,10 @@ const updateappointment = asyncHandler(async (req, res) => {
 
   const appointment = await Appointment.findById(appointmentid);
   if (!appointment) throw new apiError(404, "Appointment not found");
+
+  if (appointment.status === "Cancelled") throw new apiError(400, "Cannot modify a cancelled appointment");
+  if (appointment.status === "Completed") throw new apiError(400, "Cannot modify a completed appointment");
+
 
   if (
     req.patient &&
@@ -273,11 +304,13 @@ const updateappointment = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  logAudit({ userId: req.patient?._id, userRole: "patient", action: "appointment_updated", resource: `appointment/${appointmentid}`, ip: req.ip, result: "success" });
+  logAudit({ userId: req.patient?._id, userRole: "patient", action: "appointment_updated", resource: `appointment/${appointmentid}`, 
+    ip: req.ip, result: "success" });
 
   const updatedAppointment = await Appointment.findById(appointment._id)
     .populate("patient", "patientname patientusername age sex phonenumber email")
     .populate("doctor", "doctorname doctorusername department specialization qualification consultationfee");
+    // skipped the populate-and-format step used by every other appointment endpoint
 
   sendMail({
     to: updatedAppointment.patient.email,
@@ -292,8 +325,10 @@ const updateappointment = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new apiResponse(200, formatAppointment(updatedAppointment)));
+    .json(new apiResponse(200, formatAppointment(updatedAppointment))); 
+    // bare ObjectId strings are returned now instead of nested user objects and no more exposing the internal __v field.
 });
+
 
 const getappointment = asyncHandler(async (req, res) => {
   const { appointmentid } = req.params;
@@ -306,8 +341,6 @@ const getappointment = asyncHandler(async (req, res) => {
     );
 
   if (!appointment) throw new apiError(404, "Not found");
-
-  // IDOR: patients see only their own appointments; doctors see only their own.
   if (req.patient && appointment.patient._id.toString() !== req.patient._id.toString())
     throw new apiError(403, "Access denied");
   if (req.doctor && appointment.doctor._id.toString() !== req.doctor._id.toString())
@@ -342,7 +375,7 @@ const getallappointmentfordoctor = asyncHandler(async (req, res) => {
   })
     .populate(
       "patient",
-      "patientname patientusername age sex phonenumber"
+      "patientname patientusername age sex phonenumber email"
     )
     .sort({ createdAt: -1 });
 

@@ -1,3 +1,5 @@
+import rateLimit from "express-rate-limit";
+
 import {
     registerdoctor,
     logindoctor,
@@ -51,6 +53,14 @@ import {
 
 const router = Router();
 
+const otpLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === "production" ? 10 : 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { statusCode: 429, message: "Too many OTP requests. Please wait before requesting another." },
+});
+
 // Auth — public
 router.post(
     "/register",
@@ -67,15 +77,15 @@ router.post("/login/verify-mfa", verifyMfaToken, verifyLoginMfa);
 router.post("/renew-access-token", accesstokenrenewal);
 
 // Auth — protected
-router.post("/logout", verifyAuth, logoutdoctor);
-router.patch("/update-profile", verifyAuth, updateprofile);
-router.patch("/update-profilepicture", verifyAuth, upload.single("profilepicture"), updateprofilepic);
-router.get("/profile", verifyAuth, getdoctorprofiledetailsprivate);
-router.get("/get-doctor", verifyAuth, getCurrentDoctor);
+router.post("/logout", verifyAuth("doctor"), logoutdoctor);
+router.patch("/update-profile", verifyAuth("doctor"), updateprofile);
+router.patch("/update-profilepicture", verifyAuth("doctor"), upload.single("profilepicture"), updateprofilepic);
+router.get("/profile", verifyAuth("doctor"), getdoctorprofiledetailsprivate);
+router.get("/get-doctor", verifyAuth("doctor"), getCurrentDoctor);
 
 router.patch(
     "/update-document",
-    verifyAuth,
+    verifyAuth("doctor"),
     upload.fields([
         { name: "citizenshipdocument", maxCount: 1 },
         { name: "medicaldegree", maxCount: 1 },
@@ -85,37 +95,38 @@ router.patch(
 );
 
 // Password change (requires login + OTP)
-router.post("/update-password/send-otp", verifyAuth, sendotp);
-router.post("/update-password/verify-otp", verifyAuth, verifyotp);
-router.patch("/update-password", verifyAuth, updatepassword);
+router.post("/update-password/send-otp", otpLimiter, verifyAuth("doctor"), sendotp);
+router.post("/update-password/verify-otp", verifyAuth("doctor"), verifyotp);
+router.patch("/update-password", verifyAuth("doctor"), updatepassword);
 
 // Forgot password (public — rate limited in app.js)
-router.post("/forgot-password/send-otp", sendForgetPasswordOtp);
-router.post("/forgot-password/verify-otp", verifyTempjwt, verifyForgotPasswordOtp);
-router.patch("/forgot-password/update-password", verifyTempjwt, resetForgottenPassword);
+router.post("/forgot-password/send-otp", otpLimiter, sendForgetPasswordOtp);
+router.post("/forgot-password/verify-otp", otpLimiter, verifyTempjwt, verifyForgotPasswordOtp);
+router.patch("/forgot-password/update-password", otpLimiter, verifyTempjwt, resetForgottenPassword);
+
 
 // Appointments
-router.get("/todayappointments", verifyAuth, gettodayappointment);
-router.get("/appointments", verifyAuth, getallappointmentfordoctor);
-router.post("/appointments/verify-appointment", verifyAuth, verifyappointment);
-router.get("/appointments/:appointmentid", verifyAuth, getappointment);
+router.get("/todayappointments", verifyAuth("doctor"), gettodayappointment);
+router.get("/appointments", verifyAuth("doctor"), getallappointmentfordoctor);
+router.post("/appointments/verify-appointment", verifyAuth("doctor"), verifyappointment);
+router.get("/appointments/:appointmentid", verifyAuth("doctor"), getappointment);
 
 // Prescriptions
-router.get("/prescriptions", verifyAuth, getallprescriptionsfordoctor);
-router.get("/prescriptions/appointment/:appointmentid", verifyAuth, getprescriptionbyappointment);
-router.post("/prescriptions/:appointmentid", verifyAuth, createprescription);
-router.get("/prescriptions/:prescriptionid", verifyAuth, getprescription);
-router.patch("/prescriptions/:prescriptionid", verifyAuth, updateprescription);
-router.delete("/prescriptions/:prescriptionid", verifyAuth, deleteprescription);
+router.get("/prescriptions", verifyAuth("doctor"), getallprescriptionsfordoctor);
+router.get("/prescriptions/appointment/:appointmentid", verifyAuth("doctor"), getprescriptionbyappointment);
+router.post("/prescriptions/:appointmentid", verifyAuth("doctor"), createprescription);
+router.get("/prescriptions/:prescriptionid", verifyAuth("doctor"), getprescription);
+router.patch("/prescriptions/:prescriptionid", verifyAuth("doctor"), updateprescription);
+router.delete("/prescriptions/:prescriptionid", verifyAuth("doctor"), deleteprescription);
 
 // Lab tests
-router.get("/labtests", verifyAuth, getalllabtestsfordoctor);
-router.post("/labtests", verifyAuth, createlabtest);
-router.get("/labtests/prescription/:prescriptionid", verifyAuth, getlabtestbyprescription);
-router.patch("/labtests/:labtestid/test-results", verifyAuth, updatetestresults);
-router.post("/labtests/:labtestid/verify", verifyAuth, verifylabtest);
-router.get("/labtests/:labtestid", verifyAuth, getlabtest);
-router.patch("/labtests/:labtestid", verifyAuth, updatelabtest);
-router.delete("/labtests/:labtestid", verifyAuth, deletelabtest);
+router.get("/labtests", verifyAuth("doctor"), getalllabtestsfordoctor);
+router.post("/labtests", verifyAuth("doctor"), createlabtest);
+router.get("/labtests/prescription/:prescriptionid", verifyAuth("doctor"), getlabtestbyprescription);
+router.patch("/labtests/:labtestid/test-results", verifyAuth("doctor"), updatetestresults);
+router.post("/labtests/:labtestid/verify", verifyAuth("doctor"), verifylabtest);
+router.get("/labtests/:labtestid", verifyAuth("doctor"), getlabtest);
+router.patch("/labtests/:labtestid", verifyAuth("doctor"), updatelabtest);
+router.delete("/labtests/:labtestid", verifyAuth("doctor"), deletelabtest);
 
 export default router;

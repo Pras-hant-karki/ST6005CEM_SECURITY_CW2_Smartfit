@@ -19,8 +19,11 @@ if (!process.env.VERCEL) {
     connectdb()
         .then(() => {
             isConnected = true;
-            app.listen(port, () => {
-                console.log(`Backend running at http://localhost:${port}`);
+            // app.listen(port, () => {
+            //     console.log(`Backend running at http://192.168.1.67:${port}`);
+            // });
+            app.listen(port, "0.0.0.0", () => {
+                console.log(`Backend running on port ${port}`);
             });
         })
         .catch((error) => {

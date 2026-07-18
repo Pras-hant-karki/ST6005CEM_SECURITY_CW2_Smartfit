@@ -5,7 +5,7 @@ import { Doctor } from "../models/doctor.model.js";
 import { Admin } from "../models/admin.model.js";
 import { Patient } from "../models/patient.model.js";
 
-const verifyAuth = asyncHandler(async (req, res, next) => {
+const verifyAuth = (desiredRole) => asyncHandler(async (req, res, next) => {
   const candidateTokens = [
     req.cookies?.accesstoken,
     req.cookies?.accessToken,
@@ -13,14 +13,6 @@ const verifyAuth = asyncHandler(async (req, res, next) => {
   ].filter(Boolean);
 
   if (candidateTokens.length === 0) throw new apiError(401, "Unauthorized request");
-
-  const desiredRole = req.originalUrl.includes("/admin")
-    ? "admin"
-    : req.originalUrl.includes("/doctor")
-      ? "doctor"
-      : req.originalUrl.includes("/patient") || req.originalUrl.includes("/appointment") || req.originalUrl.includes("/payment")
-        ? "patient"
-        : null;
 
   let decoded;
   for (const token of candidateTokens) {
@@ -31,7 +23,6 @@ const verifyAuth = asyncHandler(async (req, res, next) => {
         break;
       }
     } catch {
-      // Try the next possible cookie/header token.
     }
   }
 

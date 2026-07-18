@@ -21,6 +21,11 @@ app.use(helmet({
     contentSecurityPolicy: isProduction ? undefined : false,  // disable CSP in dev to avoid blocking hot-reload
 }));
 
+// Static uploads (profile pictures, documents) must be servable by plain <img>/<a> tags,
+// which never send an Origin header — mount before the CORS Origin check so those
+// requests aren't rejected by the "no Origin in production" rule below.
+app.use(express.static("public"));
+
 const envOrigins = [
     process.env.CORS_ORIGIN_DOCTOR,
     process.env.CORS_ORIGIN_PATIENT,
@@ -34,11 +39,12 @@ const envOrigins = [
 
 const allowedOrigins = [
     ...envOrigins,
-    "http://localhost:5173",
+    "http://192.168.1.67:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",
+    "http://192.168.1.67:5173",
+    "http://192.168.1.67:5174",
     "http://127.0.0.1:5174",
-    "http://localhost:5175",
+    "http://192.168.1.67:5175",
     "http://127.0.0.1:5175",
 ].filter(Boolean);
 
@@ -73,7 +79,6 @@ app.post("/api/v1/payment/webhook", express.raw({ type: "application/json" }), s
 
 app.use(express.json({ limit: "20kb" }));
 app.use(express.urlencoded({ extended: true, limit: "20kb" }));
-app.use(express.static("public"));
 
 // Strip MongoDB operator keys ($-prefixed) from body and query to prevent NoSQL injection.
 const stripMongoOperators = (obj) => {
@@ -151,14 +156,6 @@ app.use("/api/v1/admin/login", adminAuthLimiter);
 app.use("/api/v1/patient/login/verify-mfa", mfaLimiter);
 app.use("/api/v1/doctor/login/verify-mfa", mfaLimiter);
 app.use("/api/v1/admin/login/verify-mfa", mfaLimiter);
-
-// OTP rate limiting — send and verify
-app.use("/api/v1/patient/forgot-password/send-otp", otpLimiter);
-app.use("/api/v1/doctor/forgot-password/send-otp", otpLimiter);
-app.use("/api/v1/patient/forgot-password/verify-otp", otpLimiter);
-app.use("/api/v1/doctor/forgot-password/verify-otp", otpLimiter);
-app.use("/api/v1/patient/update-password/send-otp", otpLimiter);
-app.use("/api/v1/doctor/update-password/send-otp", otpLimiter);
 
 // Routes
 app.use("/api/v1", cronRoutes);

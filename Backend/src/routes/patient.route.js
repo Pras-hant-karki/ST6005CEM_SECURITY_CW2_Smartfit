@@ -1,4 +1,6 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
+
 import {
     registerPatient,
     loginPatient,
@@ -41,6 +43,13 @@ import {
 } from "../controllers/labtest.controller.js";
 
 const router = Router();
+const otpLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === "production" ? 10 : 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { statusCode: 429, message: "Too many OTP requests. Please wait before requesting another." },
+});
 
 // Auth — public
 router.post("/register", upload.single("profilepicture"), registerPatient);
@@ -49,23 +58,25 @@ router.post("/login/verify-mfa", verifyMfaToken, verifyLoginMfa);
 router.post("/renew-access-token", accesstokenrenewal);
 
 // Auth — protected
-router.post("/logout", verifyAuth, logoutPatient);
+router.post("/logout", verifyAuth("patient"), logoutPatient);
 
 // Profile
-router.patch("/update-profile", verifyAuth, updateprofile);
-router.patch("/update-profilepicture", verifyAuth, upload.single("profilepicture"), updateprofilepic);
-router.get("/get-profile", verifyAuth, getprofiledetails);
-router.get("/get-patient", verifyAuth, getPatient);
+router.patch("/update-profile", verifyAuth("patient"), updateprofile);
+router.patch("/update-profilepicture", verifyAuth("patient"), upload.single("profilepicture"), updateprofilepic);
+router.get("/get-profile", verifyAuth("patient"), getprofiledetails);
+router.get("/get-patient", verifyAuth("patient"), getPatient);
 
 // Password change (requires login + OTP)
-router.post("/update-password/send-otp", verifyAuth, sendotp);
-router.post("/update-password/verify-otp", verifyAuth, verifyotp);
-router.patch("/update-password", verifyAuth, updatepassword);
+router.post("/update-password/send-otp", otpLimiter, verifyAuth("patient"), sendotp);
+router.post("/update-password/verify-otp", otpLimiter, verifyAuth("patient"), verifyotp);
+router.patch("/update-password", otpLimiter, verifyAuth("patient"), updatepassword);
+
 
 // Forgot password (public — rate limited in app.js)
-router.post("/forgot-password/send-otp", sendForgetPasswordOtp);
-router.post("/forgot-password/verify-otp", verifyTempjwt, verifyForgotPasswordOtp);
-router.patch("/forgot-password/update-password", verifyTempjwt, resetForgottenPassword);
+router.post("/forgot-password/send-otp", otpLimiter, sendForgetPasswordOtp);
+router.post("/forgot-password/verify-otp", otpLimiter, verifyTempjwt, verifyForgotPasswordOtp);
+router.patch("/forgot-password/update-password", otpLimiter, verifyTempjwt, resetForgottenPassword);
+//bug is fixed by adding otp limiter into the otp endpoints
 
 // Public doctor/department lookups
 router.get("/doctors/:doctorid", getdoctorprofiledetails);
@@ -74,12 +85,12 @@ router.get("/departments", getAllDepartments);
 router.get("/departments/:deptname/doctors", getdoctorbydept);
 
 // Patient-scoped records
-router.get("/prescriptions", verifyAuth, getallprescriptionsforpatient);
-router.get("/prescriptions/appointment/:appointmentid", verifyAuth, getprescriptionbyappointment);
-router.get("/prescriptions/:prescriptionid", verifyAuth, getprescription);
+router.get("/prescriptions", verifyAuth("patient"), getallprescriptionsforpatient);
+router.get("/prescriptions/appointment/:appointmentid", verifyAuth("patient"), getprescriptionbyappointment);
+router.get("/prescriptions/:prescriptionid", verifyAuth("patient"), getprescription);
 
-router.get("/labtests", verifyAuth, getalllabtestsforpatient);
-router.get("/labtests/prescription/:prescriptionid", verifyAuth, getlabtestbyprescription);
-router.get("/labtests/:labtestid", verifyAuth, getlabtest);
+router.get("/labtests", verifyAuth("patient"), getalllabtestsforpatient);
+router.get("/labtests/prescription/:prescriptionid", verifyAuth("patient"), getlabtestbyprescription);
+router.get("/labtests/:labtestid", verifyAuth("patient"), getlabtest);
 
 export default router;

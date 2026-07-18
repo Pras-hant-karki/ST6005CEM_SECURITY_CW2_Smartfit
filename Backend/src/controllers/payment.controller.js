@@ -42,7 +42,7 @@ export const createCheckoutSession = asyncHandler(async (req, res) => {
     if (amountInPence <= 0) throw new apiError(400, "Invalid consultation fee");
 
     const stripe = getStripe();
-    const patientUrl = process.env.PATIENT_FRONTEND_URL || "http://localhost:5173";
+    const patientUrl = process.env.PATIENT_FRONTEND_URL || "http://192.168.1.67:5173";
 
     const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
