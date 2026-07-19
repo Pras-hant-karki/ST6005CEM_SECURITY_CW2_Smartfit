@@ -36,7 +36,7 @@ const AdminVerifyOtp = () => {
 
   const { loading, error } = useSelector((state) => state.admin);
 
-  const [timer, setTimer] = useState(120);
+  const [timer, setTimer] = useState(300);
   const [canResend, setCanResend] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
 
@@ -89,7 +89,7 @@ const AdminVerifyOtp = () => {
     const result = await dispatch(action);
 
     if (result.meta.requestStatus === "fulfilled") {
-      setTimer(120);
+      setTimer(300);
       setCanResend(false);
     }
 
@@ -119,7 +119,7 @@ const AdminVerifyOtp = () => {
 
               <div className="flex items-center justify-center gap-2 mt-2">
                 <Clock className="w-4 h-4 text-orange-600" />
-                <p className="text-xs text-orange-600 font-medium">Valid for 2 minutes</p>
+                <p className="text-xs text-orange-600 font-medium">Valid for 5 minutes</p>
               </div>
             </div>
           </CardHeader>

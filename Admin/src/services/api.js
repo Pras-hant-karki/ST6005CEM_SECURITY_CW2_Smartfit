@@ -25,7 +25,8 @@ api.interceptors.response.use(
     if (
       !error.response ||
       error.response.status !== 401 ||
-      originalRequest.url.includes("renew-access-token")
+      originalRequest.url.includes("renew-access-token") ||
+      originalRequest.url.includes("/login")
     ) {
       return Promise.reject(error);
     }
