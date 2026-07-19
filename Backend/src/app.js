@@ -46,6 +46,7 @@ const allowedOrigins = [
     "http://127.0.0.1:5174",
     "http://192.168.1.67:5175",
     "http://127.0.0.1:5175",
+    "http://92.168.18.17:5173",
 ].filter(Boolean);
 
 const isLocalDevOrigin = (origin) =>
