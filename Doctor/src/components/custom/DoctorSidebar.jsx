@@ -4,7 +4,7 @@ import { useDispatch } from "react-redux";
 import DoctorBrand from "./DoctorBrand";
 import { logoutDoctor } from "@/services/doctorApi";
 
-const PUBLIC_HOME_URL = import.meta.env.VITE_PUBLIC_HOME_URL || "http://localhost:5173/";
+const PUBLIC_HOME_URL = import.meta.env.VITE_PUBLIC_HOME_URL || "http://192.168.1.67:5173/";
 const PUBLIC_LOGOUT_URL = `${PUBLIC_HOME_URL.replace(/\/$/, "")}/?clearPatientSession=1`;
 
 const navItems = [

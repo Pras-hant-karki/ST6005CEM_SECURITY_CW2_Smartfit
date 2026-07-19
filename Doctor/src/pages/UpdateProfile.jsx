@@ -69,7 +69,7 @@ const normalizeShifts = (doctor) => {
 const PATIENT_API_BASE_URL =
   import.meta.env.VITE_PATIENT_API_BASE_URL ||
   import.meta.env.VITE_API_BASE_URL?.replace("/doctor", "/patient") ||
-  "http://localhost:8000/api/v1/patient";
+  "http://192.168.1.67:8000/api/v1/patient";
 
 const normalizeDepartmentValue = (value = "") => value.toString().trim().toLowerCase();
 

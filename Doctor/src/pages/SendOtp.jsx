@@ -36,9 +36,9 @@ function SendOtp() {
   // Show loading while initializing user state
   if (!isInitialized) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mx-auto mb-4" />
           <p className="text-gray-600 font-medium">Loading...</p>
         </div>
       </div>
@@ -89,7 +89,7 @@ function SendOtp() {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-gray-50 to-blue-50 py-12">
+    <div className="min-h-screen bg-white py-12">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="max-w-md mx-auto">
           <Card className="shadow-xl border-0">
@@ -142,12 +142,12 @@ function SendOtp() {
 
                 {/* Show email display for authenticated users */}
                 {isAuthenticated && (
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
                     <div className="flex items-center gap-2 mb-1">
-                      <Mail className="w-4 h-4 text-blue-600" />
+                      <Mail className="w-4 h-4 text-emerald-600" />
                       <p className="text-sm text-gray-600">OTP will be sent to:</p>
                     </div>
-                    <p className="font-semibold text-blue-900">{user?.email}</p>
+                    <p className="font-semibold text-emerald-900">{user?.email}</p>
                   </div>
                 )}
 
@@ -165,7 +165,7 @@ function SendOtp() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full"
+                  className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-base font-bold"
                 >
                   {loading ? (
                     <>
@@ -185,7 +185,7 @@ function SendOtp() {
                     type="button"
                     variant="ghost"
                     onClick={() => navigate(isAuthenticated ? "/profile" : "/login")}
-                    className="gap-2"
+                    className="gap-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     {isAuthenticated ? "Back to Profile" : "Back to Login"}

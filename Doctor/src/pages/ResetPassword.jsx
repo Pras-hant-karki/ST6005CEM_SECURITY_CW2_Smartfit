@@ -71,7 +71,7 @@ function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-gray-50 to-blue-50 py-12">
+    <div className="min-h-screen bg-white py-12">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="max-w-md mx-auto">
           <Card className="shadow-xl border-0">
@@ -183,7 +183,7 @@ function ResetPassword() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full"
+                  className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-base font-bold"
                 >
                   {loading ? (
                     <>
@@ -204,7 +204,7 @@ function ResetPassword() {
                       type="button"
                       variant="ghost"
                       onClick={() => navigate("/profile")}
-                      className="gap-2"
+                      className="gap-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
                     >
                       <ArrowLeft className="w-4 h-4" />
                       Cancel

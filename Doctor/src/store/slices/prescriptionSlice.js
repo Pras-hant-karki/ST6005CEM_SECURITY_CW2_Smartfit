@@ -1,5 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
-import { isPending, isFulfilled, isRejected } from "@reduxjs/toolkit";
+import { isPending, isFulfilled, isRejected , isAnyOf } from "@reduxjs/toolkit";
 import {
   getAllPrescriptions,
   getPrescriptionDetails,

@@ -5,6 +5,12 @@ import {
   logoutDoctor,
   getCurrentDoctor,
   verifyMfaDoctor,
+  sendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
+  resetForgottenPassword,
+  sendUpdatetPasswordOtp,
+  verifyUpdatePasswordOtp,
+  updateDoctorPassword,
 } from "../../services/doctorApi";
 
 const initialState = {
@@ -118,7 +124,79 @@ const authSlice = createSlice({
       state.user = null;
       state.isAuthenticated = false;
       state.isInitialized = true;
-      state.error = null; 
+      state.error = null;
+    });
+
+    builder.addCase(sendForgotPasswordOtp.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(sendForgotPasswordOtp.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(sendForgotPasswordOtp.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    builder.addCase(sendUpdatetPasswordOtp.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(sendUpdatetPasswordOtp.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(sendUpdatetPasswordOtp.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    builder.addCase(verifyForgotPasswordOtp.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(verifyForgotPasswordOtp.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(verifyForgotPasswordOtp.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    builder.addCase(verifyUpdatePasswordOtp.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(verifyUpdatePasswordOtp.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(verifyUpdatePasswordOtp.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    builder.addCase(resetForgottenPassword.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(resetForgottenPassword.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(resetForgottenPassword.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    builder.addCase(updateDoctorPassword.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(updateDoctorPassword.fulfilled, (state) => {
+      state.loading = false;
+    });
+    builder.addCase(updateDoctorPassword.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
     });
   },
 });

@@ -80,11 +80,11 @@ const DoctorLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-teal-50 via-emerald-50 to-cyan-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-linear-to-br from-teal-600 to-emerald-700 rounded-lg flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg">
               <Stethoscope className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900">SmartFit</h1>
@@ -159,7 +159,7 @@ const DoctorLogin = () => {
                       type="button"
                       variant="ghost"
                       onClick={() => navigate("/forgot-password")}
-                      className="text-sm text-teal-600 hover:text-teal-700 hover:underline"
+                      className="text-sm text-emerald-600 hover:text-emerald-700 hover:underline"
                     >
                       Forgot Password?
                     </Button>
@@ -172,7 +172,7 @@ const DoctorLogin = () => {
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-11 text-base font-medium bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700"
+                    className="w-full h-11 text-base font-medium bg-emerald-600 hover:bg-emerald-700"
                   >
                     {loading ? (
                       <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Logging in...</>
@@ -189,7 +189,7 @@ const DoctorLogin = () => {
                       type="button"
                       variant="ghost"
                       onClick={() => navigate("/register")}
-                      className="text-teal-600 hover:text-teal-700 font-semibold hover:underline"
+                      className="text-emerald-600 hover:text-emerald-700 font-semibold hover:underline"
                     >
                       Register here
                     </Button>
@@ -201,7 +201,7 @@ const DoctorLogin = () => {
             <>
               <CardHeader className="space-y-1">
                 <div className="flex justify-center mb-2">
-                  <ShieldCheck className="w-12 h-12 text-teal-600" />
+                  <ShieldCheck className="w-12 h-12 text-emerald-600" />
                 </div>
                 <CardTitle className="text-2xl font-bold text-center">Verify Your Identity</CardTitle>
                 <CardDescription className="text-center">
@@ -235,7 +235,7 @@ const DoctorLogin = () => {
                   <Button
                     type="submit"
                     disabled={otpLoading || otp.length < 6}
-                    className="w-full h-11 text-base font-medium bg-linear-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700"
+                    className="w-full h-11 text-base font-medium bg-emerald-600 hover:bg-emerald-700"
                   >
                     {otpLoading ? (
                       <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Verifying...</>

@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1/doctor",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://192.168.1.67:8000/api/v1/doctor",
   withCredentials: true,
   timeout: 10000,
 });
@@ -25,7 +25,8 @@ api.interceptors.response.use(
     if (
       !error.response ||
       error.response.status !== 401 ||
-      originalRequest.url.includes("renew-access-token")
+      originalRequest.url.includes("renew-access-token") ||
+      originalRequest.url.includes("/login")
     ) {
       return Promise.reject(error);
     }

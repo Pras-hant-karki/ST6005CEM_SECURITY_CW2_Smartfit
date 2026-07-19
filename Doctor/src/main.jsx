@@ -8,6 +8,8 @@ import { Provider } from 'react-redux'
 import AuthLayout from "@/components/custom/authLayout"
 
 import DoctorDashboard from './pages/DoctorDashboard'
+import DoctorLogin from './pages/DoctorLogin'
+import DoctorRegister from './pages/DoctorRegister'
 import SendOtp from './pages/SendOtp'
 import VerifyOtp from './pages/VerifyOtp'
 import ResetPassword from './pages/ResetPassword'
@@ -20,11 +22,6 @@ import AllPrescriptions from './pages/AllPrescriptions'
 import PrescriptionDetails from './pages/PrescriptionDetails'
 import DoctorLabTests from './pages/DoctorLabTests'
 import VerifyAppointment from './pages/VerifyAppointment'
-
-const RedirectToPublic = ({ path = "/login" }) => {
-  window.location.replace(`${(import.meta.env.VITE_PUBLIC_HOME_URL || "http://localhost:5173").replace(/\/$/, "")}${path}`)
-  return null
-}
 
 const router = createBrowserRouter([
   {
@@ -41,12 +38,20 @@ const router = createBrowserRouter([
       },
       {
         path: '/login',
-        element: <RedirectToPublic path="/login" />
+        element: <DoctorLogin />
+      },
+      {
+        path: '/doctor/login',
+        element: <DoctorLogin />
       },
       {
         path: '/register',
-        element: <RedirectToPublic path="/login" />
-      }, 
+        element: <DoctorRegister />
+      },
+      {
+        path: '/doctor/register',
+        element: <DoctorRegister />
+      },
       {
         path: '/appointments/:appointmentid',
         element: (

@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+./STRUCTURE.md
+./CHECKLIST.md
+./SECURE.md
+./IMPLEMENTATION.md
+./BUGS.md

@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 function AuthLayout({ authentication = true, children }) {
   const navigate = useNavigate();
   const { isAuthenticated, isInitialized } = useSelector((state) => state.auth);
-  const publicLoginUrl = `${(import.meta.env.VITE_PUBLIC_HOME_URL || "http://localhost:5173").replace(/\/$/, "")}/login`;
+  const publicLoginUrl = `${(import.meta.env.VITE_PUBLIC_HOME_URL || "http://192.168.1.67:5173").replace(/\/$/, "")}/login`;
 
   useEffect(() => {
     if (!isInitialized) return;

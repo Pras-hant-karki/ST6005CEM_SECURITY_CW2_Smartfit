@@ -19,7 +19,7 @@ function VerifyOtp() {
   const isUpdate = location.state?.isUpdate || false;
 
   const { loading, error, isAuthenticated } = useSelector((state) => state.auth);
-  const [timer, setTimer] = useState(120);
+  const [timer, setTimer] = useState(300);
   const [canResend, setCanResend] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
 
@@ -82,7 +82,7 @@ function VerifyOtp() {
       const result = await dispatch(action);
 
       if (result.meta?.requestStatus === "fulfilled") {
-        setTimer(120);
+        setTimer(300);
         setCanResend(false);
       }
     } catch (error) {
@@ -93,7 +93,7 @@ function VerifyOtp() {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-gray-50 to-blue-50 py-12">
+    <div className="min-h-screen bg-white py-12">
       <div className="container mx-auto px-4 lg:px-8">
         <div className="max-w-md mx-auto">
           <Card className="shadow-xl border-0">
@@ -112,13 +112,13 @@ function VerifyOtp() {
                   We've sent a verification code to
                 </p>
                 <div className="flex items-center justify-center gap-2">
-                  <Mail className="w-4 h-4 text-blue-600" />
-                  <p className="text-sm font-semibold text-blue-600">{email}</p>
+                  <Mail className="w-4 h-4 text-emerald-600" />
+                  <p className="text-sm font-semibold text-emerald-600">{email}</p>
                 </div>
                 <div className="flex items-center justify-center gap-2 mt-2">
                   <Clock className="w-4 h-4 text-orange-600" />
                   <p className="text-xs text-orange-600 font-medium">
-                    OTP is valid for 2 minutes
+                    OTP is valid for 5 minutes
                   </p>
                 </div>
               </div>
@@ -158,7 +158,7 @@ function VerifyOtp() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full"
+                  className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-base font-bold"
                 >
                   {loading ? (
                     <>
@@ -175,7 +175,7 @@ function VerifyOtp() {
                     <div className="text-center">
                       <p className="text-sm text-gray-600">
                         Resend OTP in{" "}
-                        <span className="font-semibold text-blue-600">{formatTime(timer)}</span>
+                        <span className="font-semibold text-emerald-600">{formatTime(timer)}</span>
                       </p>
                     </div>
                   ) : (
@@ -184,7 +184,7 @@ function VerifyOtp() {
                       variant="outline"
                       onClick={resendOtpHandler}
                       disabled={resendLoading}
-                      className="w-full"
+                      className="w-full h-12 rounded-xl border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                     >
                       {resendLoading ? (
                         <>
@@ -204,7 +204,7 @@ function VerifyOtp() {
                     type="button"
                     variant="ghost"
                     onClick={() => navigate(isUpdate ? "/update-password" : "/forgot-password")}
-                    className="w-full gap-2"
+                    className="w-full gap-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     {isUpdate ? "Back" : "Change Email"}
