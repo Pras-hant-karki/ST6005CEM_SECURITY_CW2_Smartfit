@@ -1,6 +1,9 @@
 # Dependencies
 **/node_modules/
 ./STRUCTURE.md
+./CHECKLIST.md
+./SECURE.md
+./IMPLEMENTATION.md
 
 # Environment variables
 **/.env
