@@ -6,6 +6,34 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// CSRF protection (double-submit cookie). The backend issues a readable
+// `csrfToken` cookie for every client; every state-changing request must
+// echo that value back in the X-CSRF-Token header, which a cross-site
+// attacker cannot read (only same-origin JS can). Centralized here so no
+// page/thunk ever needs to attach the header itself.
+const CSRF_COOKIE_NAME = "csrfToken";
+const CSRF_HEADER_NAME = "X-CSRF-Token";
+const CSRF_PROTECTED_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+const getCsrfTokenFromCookie = () => {
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`)
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
+api.interceptors.request.use((config) => {
+  const method = (config.method || "get").toLowerCase();
+  if (CSRF_PROTECTED_METHODS.has(method)) {
+    const token = getCsrfTokenFromCookie();
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers[CSRF_HEADER_NAME] = token;
+    }
+  }
+  return config;
+});
+
 let isRefreshing = false;
 let failedQueue = [];
 
