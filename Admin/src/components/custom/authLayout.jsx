@@ -18,7 +18,12 @@ function AuthLayout({ authentication = true, children }) {
     }
   }, [authentication, isAuthenticated, isInitialized, navigate]);
 
-  if (!isInitialized) {
+  // Block rendering of gated content until we know the auth state AND it
+  // matches what this route requires — the redirect in the effect above
+  // only fires after render, so without this check protected children
+  // would flash on screen for one frame before the redirect happens.
+  const authMismatch = authentication ? !isAuthenticated : isAuthenticated;
+  if (!isInitialized || authMismatch) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#faf8ff] text-sm font-semibold text-slate-500">
         Loading session...

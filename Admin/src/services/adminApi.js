@@ -324,3 +324,15 @@ export const getAdmin = createAsyncThunk(
     }
   }
 );
+
+export const adminGetSecurityDashboard = createAsyncThunk(
+  "admin/getSecurityDashboard",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await api.get("/security-dashboard");
+      return res.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+  }
+);

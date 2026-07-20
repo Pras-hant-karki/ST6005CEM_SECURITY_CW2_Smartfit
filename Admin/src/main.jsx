@@ -17,6 +17,7 @@ import EditDoctor from './pages/EditDoctor'
 import AdminDepartmentList from './pages/DepartmentList'
 import AdminUpdateProfile from './pages/UpdateProfile'
 import AdminProfile from './pages/AdminProfile'
+import SecurityDashboard from './pages/SecurityDashboard'
 
 const router = createBrowserRouter([
   {
@@ -25,7 +26,11 @@ const router = createBrowserRouter([
     children: [
       {
         path: '/',
-        element: <AdminDashboard />
+        element: (
+          <AuthLayout authentication={true}>
+            <AdminDashboard />
+          </AuthLayout>
+        )
       },
       {
         path: '/login',
@@ -133,6 +138,14 @@ const router = createBrowserRouter([
         element: (
           <AuthLayout authentication={true}>
             <AdminProfile />
+          </AuthLayout>
+        )
+      },
+      {
+        path: '/security',
+        element: (
+          <AuthLayout authentication={true}>
+            <SecurityDashboard />
           </AuthLayout>
         )
       },

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardList,
   LayoutDashboard,
+  ShieldAlert,
   Stethoscope,
   User,
   UserRound,
@@ -104,6 +105,7 @@ const AdminDashboard = () => {
     { label: "Appointments", icon: CalendarDays, path: "/appointments" },
     { label: "Doctors", icon: UserRound, path: "/doctors" },
     { label: "Departments", icon: Building2, path: "/departments" },
+    { label: "Security", icon: ShieldAlert, path: "/security" },
     { label: "Profile", icon: User, path: "/profile" },
   ];
 
