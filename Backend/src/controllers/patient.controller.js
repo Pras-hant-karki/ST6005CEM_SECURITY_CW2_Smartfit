@@ -14,6 +14,7 @@ import { validatePassword } from '../utils/passwordValidator.js';
 import { trackAttempt, trackLockout, blockIp } from '../utils/rateStore.js';
 import { verifyCaptchaToken } from '../middlewares/captcha.middleware.js';
 import { logAudit } from '../services/auditLog.service.js';
+import { reportSecurityEvent } from '../services/securityAlert.service.js';
 import { saveOTP, verifyOTP, clearOTP } from '../services/otp.js';
 import generateOtp from '../utils/otpgenerator.js';
 import { forgetpasswordotptemplate } from '../utils/emailtemplate.js';
@@ -196,9 +197,26 @@ const loginPatient = asyncHandler(async (req, res) => {
         patient.loginAttempts = (patient.loginAttempts || 0) + 1;
         if (patient.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
             patient.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+            reportSecurityEvent({
+                eventType: "account_locked",
+                userId: patient._id,
+                role: "patient",
+                ip: req.ip,
+                endpoint: "/patient/login",
+                description: `Patient account locked after ${MAX_LOGIN_ATTEMPTS} consecutive failed login attempts.`,
+            });
             // An IP that causes repeated account lockouts (not just repeated
             // failed attempts on one account) gets temporarily blocked outright.
-            if (trackLockout(req.ip)) blockIp(req.ip);
+            if (trackLockout(req.ip)) {
+                blockIp(req.ip);
+                reportSecurityEvent({
+                    eventType: "ip_blocked",
+                    role: "patient",
+                    ip: req.ip,
+                    endpoint: "/patient/login",
+                    description: "IP address temporarily blocked after triggering repeated account lockouts.",
+                });
+            }
         }
         await patient.save({ validateBeforeSave: false });
         logAudit({ userId: patient._id, userRole: "patient", action: "login_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
@@ -266,7 +284,17 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
     if (!result.valid) {
         logAudit({ userId: patient._id, userRole: "patient", action: "mfa_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: result.reason } });
         if (result.reason === "expired") throw new apiError(401, "OTP expired. Please log in again.");
-        if (result.reason === "too_many_attempts") throw new apiError(429, "Too many incorrect OTP attempts. Please log in again.");
+        if (result.reason === "too_many_attempts") {
+            reportSecurityEvent({
+                eventType: "mfa_attempts_exceeded",
+                userId: patient._id,
+                role: "patient",
+                ip: req.ip,
+                endpoint: "/patient/login/verify-mfa",
+                description: "MFA verification failed repeatedly — attempt threshold exceeded.",
+            });
+            throw new apiError(429, "Too many incorrect OTP attempts. Please log in again.");
+        }
         throw new apiError(401, "Invalid OTP");
     }
     clearOTP(patient.email);
@@ -335,6 +363,14 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
     if (!patient) throw new apiError(404, "Patient not found");
 
     if (patient.refreshtoken !== refreshToken) {
+        reportSecurityEvent({
+            eventType: "refresh_token_reuse",
+            userId: patient._id,
+            role: "patient",
+            ip: req.ip,
+            endpoint: "/patient/renew-access-token",
+            description: "A refresh token was presented that did not match the one on record — possible token theft or reuse of a revoked token.",
+        });
         clearCsrfCookie(res);
         throw new apiError(401, "Refresh token mismatch or already used");
     }
@@ -345,7 +381,14 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
     if (patient.lastUserAgent && currentUserAgent && patient.lastUserAgent !== currentUserAgent) {
         patient.refreshtoken = null;
         await patient.save({ validateBeforeSave: false });
-        logAudit({ userId: patient._id, userRole: "patient", action: "session_device_mismatch", resource: "patient", ip: req.ip, result: "failure" });
+        reportSecurityEvent({
+            eventType: "session_device_mismatch",
+            userId: patient._id,
+            role: "patient",
+            ip: req.ip,
+            endpoint: "/patient/renew-access-token",
+            description: "Refresh token used from a different device/browser than the one it was issued to.",
+        });
         clearCsrfCookie(res);
         throw new apiError(401, "Session from a different device detected. Please log in again.");
     }

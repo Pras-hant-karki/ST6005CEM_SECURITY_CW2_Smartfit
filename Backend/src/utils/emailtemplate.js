@@ -461,4 +461,22 @@ const appointmentupdation = (patientName,doctorName,appointmentDate,appointmentT
 
 `
 
-export { otpTemplate, forgetpasswordotptemplate, welcomeemailtemplate, logintemplate ,appointmentconfirmation,appointmentcancellation,appointmentupdation} 
+const securityAlertTemplate = ({ eventType, description, ip, userId, role, endpoint }) => `
+  <div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 20px;">
+    <div style="max-width: 560px; margin: auto; background: white; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); padding: 30px;">
+      <h2 style="color: #c0392b; margin-top: 0;">SmartFit Security Alert</h2>
+      <p>${escapeHtml(description)}</p>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px;">
+        <tr><td style="padding: 6px 0; color: #888; width: 120px;">Event</td><td>${escapeHtml(eventType)}</td></tr>
+        <tr><td style="padding: 6px 0; color: #888;">Time</td><td>${escapeHtml(new Date().toISOString())}</td></tr>
+        <tr><td style="padding: 6px 0; color: #888;">User</td><td>${escapeHtml(userId || "n/a")}</td></tr>
+        <tr><td style="padding: 6px 0; color: #888;">Role</td><td>${escapeHtml(role || "n/a")}</td></tr>
+        <tr><td style="padding: 6px 0; color: #888;">IP</td><td>${escapeHtml(ip || "n/a")}</td></tr>
+        <tr><td style="padding: 6px 0; color: #888;">Endpoint</td><td>${escapeHtml(endpoint || "n/a")}</td></tr>
+      </table>
+      <p style="margin-top: 20px; font-size: 13px; color: #888;">Full details are recorded in the AuditLog collection. Further identical events from the same source are suppressed for 15 minutes to avoid alert flooding.</p>
+    </div>
+  </div>
+`;
+
+export { otpTemplate, forgetpasswordotptemplate, welcomeemailtemplate, logintemplate ,appointmentconfirmation,appointmentcancellation,appointmentupdation, securityAlertTemplate}

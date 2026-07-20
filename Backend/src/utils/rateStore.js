@@ -77,3 +77,27 @@ export function isIpBlocked(ip) {
     }
     return true;
 }
+
+// Security-alert email suppression — at most one email per (event, source)
+// pair within the window, so a sustained attack produces one notification
+// instead of a flood. The audit log entry is never suppressed by this, only
+// the email; see securityAlert.service.js.
+const recentAlerts = new Map();
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of recentAlerts) {
+        if (now - v.first > v.window) recentAlerts.delete(k);
+    }
+}, 60_000).unref();
+
+export function shouldSendAlert(key, windowMs = 15 * 60 * 1000) {
+    if (!key) return true;
+    const now = Date.now();
+    const e = recentAlerts.get(key);
+    if (!e || now - e.first > windowMs) {
+        recentAlerts.set(key, { first: now, window: windowMs });
+        return true;
+    }
+    return false;
+}

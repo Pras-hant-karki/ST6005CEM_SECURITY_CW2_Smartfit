@@ -5,6 +5,7 @@ import { apiResponse } from "../utils/apiResponse.js";
 import { Appointment } from "../models/appointment.model.js";
 import { Payment } from "../models/payment.model.js";
 import { logAudit } from "../services/auditLog.service.js";
+import { reportSecurityEvent } from "../services/securityAlert.service.js";
 
 const getStripe = () => {
     if (!process.env.STRIPE_SECRET_KEY) throw new apiError(503, "Payment service not configured");
@@ -123,6 +124,14 @@ export const stripeWebhook = async (req, res) => {
         event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error("Stripe webhook signature verification failed:", err.message);
+        reportSecurityEvent({
+            eventType: "stripe_webhook_invalid_signature",
+            role: "system",
+            ip: req.ip,
+            endpoint: "/payment/webhook",
+            description: "A request to the Stripe webhook endpoint failed signature verification — either a misconfigured secret or a forged request.",
+            metadata: { reason: err.message },
+        });
         return res.status(400).json({ error: "Invalid webhook signature" });
     }
 
@@ -157,13 +166,13 @@ export const stripeWebhook = async (req, res) => {
                 meta.appointmentId !== payment.appointmentId.toString()
             ) {
                 console.error(`Webhook: metadata mismatch for session ${stripeSessionId}`);
-                await logAudit({
+                await reportSecurityEvent({
+                    eventType: "payment_metadata_mismatch",
                     userId: payment.patientId,
-                    userRole: "patient",
-                    action: "payment_metadata_mismatch",
-                    resource: `appointment/${payment.appointmentId}`,
+                    role: "patient",
                     ip: "stripe-webhook",
-                    result: "failure",
+                    endpoint: `appointment/${payment.appointmentId}`,
+                    description: "Stripe webhook metadata did not match the stored payment record — possible tampering or a stale session.",
                     metadata: { stripeSessionId },
                 });
                 return res.status(200).json({ received: true });

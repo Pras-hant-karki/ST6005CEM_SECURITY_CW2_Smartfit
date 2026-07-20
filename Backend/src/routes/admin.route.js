@@ -24,6 +24,7 @@ import path from "path";
 
 import { upload } from "../middlewares/multer.middleware.js";
 import { requireRole, verifyAuth } from "../middlewares/auth.middleware.js";
+import { reportSecurityEvent } from "../services/securityAlert.service.js";
 import { verifyMfaToken } from "../middlewares/mfa.middleware.js";
 import { verifyCaptcha } from "../middlewares/captcha.middleware.js";
 import {
@@ -53,6 +54,18 @@ const otpLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { statusCode: 429, message: "Too many OTP requests. Please wait before requesting another." },
+    // Overrides the default response so the limit-exceeded event also gets
+    // audited/alerted; still returns the same status/body as before.
+    handler: (req, res, _next, options) => {
+        reportSecurityEvent({
+            eventType: "otp_rate_limit_exceeded",
+            role: "admin",
+            ip: req.ip,
+            endpoint: req.originalUrl,
+            description: "OTP request rate limit exceeded.",
+        });
+        res.status(options.statusCode).json(options.message);
+    },
 });
 
 // Tighter than the global limiter for profile writes — sensitive, not
