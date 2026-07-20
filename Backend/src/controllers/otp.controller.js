@@ -12,11 +12,12 @@ import { Admin } from "../models/admin.model.js";
 import { forgetpasswordotptemplate, otpTemplate } from "../utils/emailtemplate.js";
 import jwt from "jsonwebtoken";
 
-const isProduction = process.env.NODE_ENV === "production";
+// See utils/csrf.js for why this also flips on in dev when HTTPS_ENABLED=true.
+const isSecureContext = process.env.NODE_ENV === "production" || process.env.HTTPS_ENABLED === "true";
 const CLEAR_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
 };
 

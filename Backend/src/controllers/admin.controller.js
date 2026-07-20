@@ -25,26 +25,27 @@ const sendAdminMail = async (mailOptions) => {
     }
 };
 
-const isProduction = process.env.NODE_ENV === "production";
+// See utils/csrf.js for why this also flips on in dev when HTTPS_ENABLED=true.
+const isSecureContext = process.env.NODE_ENV === "production" || process.env.HTTPS_ENABLED === "true";
 
 const ACCESS_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
     maxAge: 1 * 24 * 60 * 60 * 1000,
 };
 const REFRESH_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
     maxAge: 20 * 24 * 60 * 60 * 1000,
 };
 const CLEAR_COOKIE_OPTIONS = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
 };
 

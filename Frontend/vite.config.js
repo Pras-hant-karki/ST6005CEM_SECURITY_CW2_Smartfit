@@ -24,7 +24,25 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiTarget,
           changeOrigin: true,
-          secure: true,
+          // Lets this proxy reach the backend when it's running with the
+          // self-signed dev cert (Backend HTTPS_ENABLED=true) without Node
+          // rejecting the untrusted certificate.
+          secure: false,
+          configure: (proxy) => {
+            // The browser only ever talks to this Vite dev server over plain
+            // HTTP, even when the upstream backend is HTTPS and marks its
+            // cookies Secure. A Secure-flagged cookie can't be set over an
+            // HTTP connection, so strip the flag on the hop back to the
+            // browser. Dev-only — never runs in the production build.
+            proxy.on("proxyRes", (proxyRes) => {
+              const setCookie = proxyRes.headers["set-cookie"];
+              if (setCookie) {
+                proxyRes.headers["set-cookie"] = setCookie.map((cookie) =>
+                  cookie.replace(/;\s*Secure/gi, "")
+                );
+              }
+            });
+          },
         },
       },
     },

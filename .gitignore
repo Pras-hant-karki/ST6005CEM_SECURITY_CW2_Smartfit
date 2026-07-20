@@ -13,6 +13,9 @@ dist-ssr/
 # Uploaded files — runtime data, not source code
 Backend/public/uploads/
 
+# Self-signed dev TLS cert/key — generated locally per machine, never commit
+Backend/certs/*.pem
+
 # Logs
 *.log
 npm-debug.log*

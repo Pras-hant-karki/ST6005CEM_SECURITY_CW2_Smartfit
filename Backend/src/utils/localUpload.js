@@ -30,7 +30,12 @@ export const uploadLocal = async (buffer, folder = "misc") => {
   await fs.writeFile(filepath, buffer);
 
   const port = process.env.PORT || 8000;
-  const baseUrl = process.env.PUBLIC_BASE_URL || `http://192.168.1.67:${port}`;
+  // Match the scheme the server is actually reachable on, so stored
+  // file/document URLs don't hardcode http:// while the backend is running
+  // HTTPS_ENABLED=true (which would otherwise bake in a broken/mixed-content
+  // link the first time a file is uploaded after switching schemes).
+  const scheme = process.env.HTTPS_ENABLED === "true" ? "https" : "http";
+  const baseUrl = process.env.PUBLIC_BASE_URL || `${scheme}://192.168.1.67:${port}`;
 
   if (isProfilePicture) {
     // only profile pictures still get a plain public link as usual, since they are not sensitive

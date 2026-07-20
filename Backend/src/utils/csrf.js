@@ -1,6 +1,11 @@
 import crypto from "crypto";
 
-const isProduction = process.env.NODE_ENV === "production";
+// Cookies must be Secure/SameSite=None whenever the connection is actually
+// HTTPS — in production, or in dev when HTTPS_ENABLED=true (self-signed
+// cert). Without this, a dev backend running on https:// would still issue
+// SameSite=Lax cookies, which browsers' schemeful-same-site rules treat as
+// cross-site relative to an http:// frontend and silently drop on XHR/fetch.
+const isSecureContext = process.env.NODE_ENV === "production" || process.env.HTTPS_ENABLED === "true";
 
 export const CSRF_COOKIE_NAME = "csrfToken";
 
@@ -12,16 +17,16 @@ export const generateCsrfToken = () => crypto.randomBytes(32).toString("hex");
 // also set the header, so only same-origin JS can make the two match.
 export const csrfCookieOptions = {
     httpOnly: false,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 export const csrfClearOptions = {
     httpOnly: false,
-    secure: isProduction,
-    sameSite: isProduction ? "None" : "Lax",
+    secure: isSecureContext,
+    sameSite: isSecureContext ? "None" : "Lax",
     path: "/",
 };
 
