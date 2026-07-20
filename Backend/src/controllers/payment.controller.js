@@ -215,6 +215,79 @@ export const stripeWebhook = async (req, res) => {
                 });
             }
         }
+
+        // Reconciliation: a Checkout Session that was never completed expires
+        // ~24h after creation (or earlier if configured). Without this, an
+        // abandoned checkout leaves its Payment stuck in "pending" forever —
+        // this closes it out so pending rows always reach a terminal state.
+        if (event.type === "checkout.session.expired") {
+            const stripeSessionId = obj.id;
+            const payment = await Payment.findOne({ stripeSessionId });
+
+            if (!payment) {
+                // Missing payment record — nothing to reconcile locally, but
+                // worth a record since it means our DB and Stripe disagree
+                // on what sessions exist.
+                console.error(`Webhook: no payment record for expired session ${stripeSessionId}`);
+                await logAudit({
+                    userRole: "system",
+                    action: "payment_unexpected_state",
+                    resource: `stripe-session/${stripeSessionId}`,
+                    ip: "stripe-webhook",
+                    result: "failure",
+                    metadata: { stripeSessionId, reason: "no_local_payment_record", stripeEvent: event.type },
+                });
+                return res.status(200).json({ received: true });
+            }
+
+            // Idempotent: duplicate webhook delivery for a session already
+            // marked expired — no-op, no re-logging.
+            if (payment.status === "expired") {
+                return res.status(200).json({ received: true });
+            }
+
+            // Never touch a payment that already reached a completed or
+            // failed terminal state — those are reconciled by their own
+            // event types. A "completed" payment receiving an expired event
+            // shouldn't happen (Stripe treats the two as mutually exclusive
+            // outcomes for the same session) so it's flagged as unexpected
+            // rather than silently ignored.
+            if (payment.status === "completed") {
+                console.error(`Webhook: expired event for already-completed session ${stripeSessionId}`);
+                await logAudit({
+                    userId: payment.patientId,
+                    userRole: "patient",
+                    action: "payment_unexpected_state",
+                    resource: `appointment/${payment.appointmentId}`,
+                    ip: "stripe-webhook",
+                    result: "failure",
+                    metadata: { stripeSessionId, reason: "expired_event_on_completed_payment", stripeEvent: event.type },
+                });
+                return res.status(200).json({ received: true });
+            }
+
+            if (payment.status === "failed") {
+                // Already reconciled via payment_intent.payment_failed — a
+                // later expiry of the same session is expected, not an error.
+                return res.status(200).json({ received: true });
+            }
+
+            // payment.status === "pending" — the only state this event is
+            // meant to reconcile.
+            payment.status = "expired";
+            payment.processedAt = new Date();
+            await payment.save();
+
+            await logAudit({
+                userId: payment.patientId,
+                userRole: "patient",
+                action: "payment_session_expired",
+                resource: `appointment/${payment.appointmentId}`,
+                ip: "stripe-webhook",
+                result: "success",
+                metadata: { stripeSessionId, amount: payment.amount, currency: payment.currency },
+            });
+        }
     } catch (err) {
         console.error("Webhook processing error:", err.message);
         return res.status(500).json({ error: "Webhook processing failed" });

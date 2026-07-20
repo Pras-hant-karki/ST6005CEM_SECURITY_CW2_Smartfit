@@ -31,36 +31,51 @@ const ALERT_SUPPRESSION_WINDOW_MS = 15 * 60 * 1000;
  * Records a high-risk security event: always writes an audit log entry,
  * and — only for events on the alert allow-list, and only once per
  * (event type + source) within the suppression window — emails an
- * administrator. Never throws; a failure here must never break the
- * request that triggered it.
+ * administrator.
+ *
+ * Structurally cannot reject: most call sites invoke this fire-and-forget
+ * (no await, no .catch()), so an unhandled rejection here would propagate
+ * as an unhandled promise rejection — which crashes the process by default
+ * on Node 15+. The default `= {}` param guards against a missing/malformed
+ * argument, and the outer try/catch guards against everything else,
+ * independent of whether logAudit/sendMail's own internal safety nets stay
+ * intact through future edits.
  */
-export const reportSecurityEvent = async ({ eventType, userId, role, ip, endpoint, description, metadata }) => {
-    // Audit logging is unconditional — this is the record that feeds
-    // auditing / incident response / security review, independent of
-    // whether the email side is currently suppressed.
-    await logAudit({
-        userId,
-        userRole: role,
-        action: eventType,
-        resource: endpoint,
-        ip,
-        result: "failure",
-        metadata,
-    });
-
-    if (!ALERT_WORTHY_EVENTS.has(eventType)) return;
-    if (!ALERT_RECIPIENT) return; // mail not configured — degrade silently, same as the rest of the mail service
-
-    const suppressionKey = `${eventType}:${ip || userId || "unknown"}`;
-    if (!shouldSendAlert(suppressionKey, ALERT_SUPPRESSION_WINDOW_MS)) return;
-
+export const reportSecurityEvent = async (event = {}) => {
     try {
-        await sendMail({
-            to: ALERT_RECIPIENT,
-            subject: `SmartFit Security Alert: ${eventType}`,
-            html: securityAlertTemplate({ eventType, description, ip, userId, role, endpoint }),
+        const { eventType, userId, role, ip, endpoint, description, metadata } = event;
+
+        // Audit logging is unconditional — this is the record that feeds
+        // auditing / incident response / security review, independent of
+        // whether the email side is currently suppressed.
+        await logAudit({
+            userId,
+            userRole: role,
+            action: eventType,
+            resource: endpoint,
+            ip,
+            result: "failure",
+            metadata,
         });
+
+        if (!ALERT_WORTHY_EVENTS.has(eventType)) return;
+        if (!ALERT_RECIPIENT) return; // mail not configured — degrade silently, same as the rest of the mail service
+
+        const suppressionKey = `${eventType}:${ip || userId || "unknown"}`;
+        if (!shouldSendAlert(suppressionKey, ALERT_SUPPRESSION_WINDOW_MS)) return;
+
+        try {
+            await sendMail({
+                to: ALERT_RECIPIENT,
+                subject: `SmartFit Security Alert: ${eventType}`,
+                html: securityAlertTemplate({ eventType, description, ip, userId, role, endpoint }),
+            });
+        } catch (err) {
+            console.error("Security alert email failed:", err.message);
+        }
     } catch (err) {
-        console.error("Security alert email failed:", err.message);
+        // Absolute last resort. Should be unreachable given the guards
+        // above, but this function must never reject under any input.
+        console.error("reportSecurityEvent failed unexpectedly:", err?.message || err);
     }
 };
