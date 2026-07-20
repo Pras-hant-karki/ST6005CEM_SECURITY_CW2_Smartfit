@@ -35,8 +35,10 @@ const App = () => {
   }
   return (
     <>
-     
-      <main className="min-h-screen bg-gray-50 p-4">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-emerald-600 focus:px-4 focus:py-2 focus:text-white">
+        Skip to main content
+      </a>
+      <main id="main-content" className="min-h-screen bg-gray-50 p-4">
         <Outlet />
       </main>
     </>
