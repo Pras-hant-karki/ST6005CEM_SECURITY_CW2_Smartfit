@@ -358,6 +358,11 @@ export const verifylabtest = asyncHandler(async (req, res) => {
         throw new apiError(404, "Lab test not found");
     }
 
+    // IDOR: doctors may only verify their own lab tests
+    if (labtest.doctor_id.toString() !== req.doctor._id.toString()) {
+        throw new apiError(403, "You don't have permission to verify this lab test");
+    }
+
     // Check if lab test is completed
     if (labtest.overall_status !== "completed") {
         throw new apiError(400, "Lab test must be completed before verification");

@@ -6,9 +6,10 @@ import { apiResponse } from "../utils/apiResponse.js";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
-import { trackAttempt } from "../utils/rateStore.js";
+import { trackAttempt, trackLockout, blockIp } from "../utils/rateStore.js";
 import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import { logAudit } from "../services/auditLog.service.js";
+import { AuditLog } from "../models/auditLog.model.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
 import jwt from "jsonwebtoken";
@@ -49,13 +50,14 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
 const PASSWORD_EXPIRY_DAYS = 90;
 
-const generateaccesstokenandrefreshtoken = async (adminId) => {
+const generateaccesstokenandrefreshtoken = async (adminId, userAgent) => {
     // BUG-001 fix: select "+refreshtoken" to allow comparison during renewal.
     const admin = await Admin.findById(adminId).select("+refreshtoken");
     const accesstoken = admin.generateaccesstoken();
     const refreshtoken = admin.generaterefreshtoken();
 
     admin.refreshtoken = refreshtoken;
+    if (userAgent) admin.lastUserAgent = userAgent;
     await admin.save({ validateBeforeSave: false });
 
     return { accesstoken, refreshtoken };
@@ -172,6 +174,7 @@ const loginadmin = asyncHandler(async (req, res) => {
         admin.loginAttempts = (admin.loginAttempts || 0) + 1;
         if (admin.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
             admin.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+            if (trackLockout(req.ip)) blockIp(req.ip);
         }
         await admin.save({ validateBeforeSave: false });
         logAudit({ userId: admin._id, userRole: "admin", action: "login_failed", resource: "admin", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
@@ -184,7 +187,7 @@ const loginadmin = asyncHandler(async (req, res) => {
 
     // Dev-only MFA bypass for a single named admin account (explicitly requested).
     if (admin.adminusername === "prashantadmin") {
-        const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
+        const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id, req.headers["user-agent"]);
         const loggedinadmin = await Admin.findById(admin._id).select("-password -refreshtoken -passwordHistory");
 
         logAudit({ userId: admin._id, userRole: "admin", action: "login_success", resource: "admin", ip: req.ip, result: "success" });
@@ -249,7 +252,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
     }
     clearOTP(admin.email);
 
-    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
+    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id, req.headers["user-agent"]);
     const loggedinadmin = await Admin.findById(admin._id).select("-password -refreshtoken -passwordHistory");
 
     sendAdminMail({
@@ -294,14 +297,22 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     if (decodetoken.role !== "admin") throw new apiError(401, "Admin session required");
 
-    const admin = await Admin.findById(decodetoken._id).select("+refreshtoken");
+    const admin = await Admin.findById(decodetoken._id).select("+refreshtoken +lastUserAgent");
     if (!admin) throw new apiError(404, "Admin not found");
 
     if (admin.refreshtoken !== refreshtoken) {
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
-    const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(admin._id);
+    const currentUserAgent = req.headers["user-agent"];
+    if (admin.lastUserAgent && currentUserAgent && admin.lastUserAgent !== currentUserAgent) {
+        admin.refreshtoken = null;
+        await admin.save({ validateBeforeSave: false });
+        logAudit({ userId: admin._id, userRole: "admin", action: "session_device_mismatch", resource: "admin", ip: req.ip, result: "failure" });
+        throw new apiError(401, "Session from a different device detected. Please log in again.");
+    }
+
+    const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(admin._id, currentUserAgent);
 
     return res
         .status(200)
@@ -336,10 +347,15 @@ const updatepassword = asyncHandler(async (req, res) => {
     const updatedHistory = [admin.password, ...(admin.passwordHistory || [])].slice(0, 5);
     admin.passwordHistory = updatedHistory;
     admin.password = newpassword;
+    admin.refreshtoken = null; // revoke all existing sessions, matching patient/doctor behavior
     admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
 
-    return res.status(200).json(new apiResponse(200, {}, "Password updated successfully"));
+    return res
+        .status(200)
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password updated. Please log in again."));
 });
 
 const resetForgottenPassword = asyncHandler(async (req, res) => {
@@ -364,13 +380,16 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     const updatedHistory = [admin.password, ...(admin.passwordHistory || [])].slice(0, 5);
     admin.passwordHistory = updatedHistory;
     admin.password = newpassword;
+    admin.refreshtoken = null; // revoke all existing sessions, matching patient/doctor behavior
     admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
 
     return res
         .status(200)
         .clearCookie("tempToken", CLEAR_COOKIE_OPTIONS)
-        .json(new apiResponse(200, {}, "Password reset successfully"));
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Password reset successfully. Please log in again."));
 });
 
 const updateprofile = asyncHandler(async (req, res) => {
@@ -424,6 +443,38 @@ const getCurrentAdmin = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, admin, "Current admin fetched successfully"));
 });
 
+// Read-only summary of the last 24h of audit activity — polling-based,
+// no WebSocket. Surfaces failed-login volume per IP so an admin can spot
+// a brute-force pattern without querying MongoDB directly.
+const getSecurityDashboard = asyncHandler(async (req, res) => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [failedLoginsByIp, eventCounts, recentFailures] = await Promise.all([
+        AuditLog.aggregate([
+            { $match: { action: "login_failed", timestamp: { $gte: since } } },
+            { $group: { _id: "$ip", count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+            { $limit: 20 },
+        ]),
+        AuditLog.aggregate([
+            { $match: { timestamp: { $gte: since } } },
+            { $group: { _id: { action: "$action", result: "$result" }, count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+        ]),
+        AuditLog.find({ result: "failure", timestamp: { $gte: since } })
+            .sort({ timestamp: -1 })
+            .limit(50)
+            .select("timestamp userRole action resource ip result"),
+    ]);
+
+    return res.status(200).json(new apiResponse(200, {
+        windowStart: since,
+        failedLoginsByIp: failedLoginsByIp.map((r) => ({ ip: r._id || "unknown", count: r.count })),
+        eventCounts: eventCounts.map((r) => ({ action: r._id.action, result: r._id.result, count: r.count })),
+        recentFailures,
+    }, "Security dashboard data fetched"));
+});
+
 export {
     registeradmin,
     loginadmin,
@@ -436,4 +487,5 @@ export {
     accesstokenrenewal,
     updateprofilepic,
     getCurrentAdmin,
+    getSecurityDashboard,
 };

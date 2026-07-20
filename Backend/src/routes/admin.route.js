@@ -12,6 +12,7 @@ import {
     getCurrentAdmin,
     updatepassword,
     resetForgottenPassword,
+    getSecurityDashboard,
 } from "../controllers/admin.controller.js";
  // added update password & reset forgot password ?
 import { sendForgetPasswordOtp, verifyForgotPasswordOtp } from "../controllers/otp.controller.js";
@@ -54,6 +55,16 @@ const otpLimiter = rateLimit({
     message: { statusCode: 429, message: "Too many OTP requests. Please wait before requesting another." },
 });
 
+// Tighter than the global limiter for profile writes — sensitive, not
+// auth-adjacent.
+const profileLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === "production" ? 20 : 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { statusCode: 429, message: "Too many profile requests. Please wait before trying again." },
+});
+
 
 const adminOnly = [verifyAuth("admin"), requireRole("admin")];
 router.get("/documents/:role/:doctype/:filename", adminOnly, (req, res) => {
@@ -82,10 +93,11 @@ router.post("/renew-access-token", accesstokenrenewal);
 
 // Profile
 router.post("/logout", adminOnly, logoutadmin);
-router.patch("/update-profile", adminOnly, updateprofile);
-router.patch("/update-profilepicture", adminOnly, upload.single("profilepicture"), updateprofilepic);
+router.patch("/update-profile", profileLimiter, adminOnly, updateprofile);
+router.patch("/update-profilepicture", profileLimiter, adminOnly, upload.single("profilepicture"), updateprofilepic);
 router.get("/get-profile", adminOnly, getprofiledetails);
 router.get("/get-admin", adminOnly, getCurrentAdmin);
+router.get("/security-dashboard", adminOnly, getSecurityDashboard);
 router.patch("/update-password", adminOnly, updatepassword);
 // update password routes  added
 

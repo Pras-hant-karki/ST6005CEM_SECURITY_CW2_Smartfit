@@ -53,6 +53,7 @@ const doctorSchema = new Schema(
     department: { type: String, trim: true, default: "" },
     specialization: { type: String, trim: true, default: "" },
     refreshtoken: { type: String, select: false },
+    lastUserAgent: { type: String, default: null, select: false },
     loginAttempts: { type: Number, default: 0, select: false },
     lockedUntil: { type: Date, default: null, select: false },
     

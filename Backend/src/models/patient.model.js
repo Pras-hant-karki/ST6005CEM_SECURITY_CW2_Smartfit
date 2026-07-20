@@ -53,6 +53,11 @@ const patientSchema = new Schema({
         type: String,
         select: false,
     },
+    lastUserAgent: {
+        type: String,
+        default: null,
+        select: false,
+    },
     profilepicture: {
         type: String,
     },

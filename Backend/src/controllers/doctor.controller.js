@@ -7,7 +7,7 @@ import jwt from "jsonwebtoken";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
 import { validatePassword } from "../utils/passwordValidator.js";
-import { trackAttempt } from "../utils/rateStore.js";
+import { trackAttempt, trackLockout, blockIp } from "../utils/rateStore.js";
 import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import { logAudit } from "../services/auditLog.service.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
@@ -49,13 +49,14 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
 const PASSWORD_EXPIRY_DAYS = 90;
 
-const generateaccesstokenandrefreshtoken = async (doctorId) => {
+const generateaccesstokenandrefreshtoken = async (doctorId, userAgent) => {
     // BUG-001 fix: select "+refreshtoken" to allow comparison on renewal.
     const doctor = await Doctor.findById(doctorId).select("+refreshtoken");
     const accesstoken = doctor.generateaccesstoken();
     const refreshtoken = doctor.generaterefreshtoken();
 
     doctor.refreshtoken = refreshtoken;
+    if (userAgent) doctor.lastUserAgent = userAgent;
     await doctor.save({ validateBeforeSave: false });
 
     return { accesstoken, refreshtoken };
@@ -366,6 +367,7 @@ const logindoctor = asyncHandler(async (req, res) => {
         doctor.loginAttempts = (doctor.loginAttempts || 0) + 1;
         if (doctor.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
             doctor.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+            if (trackLockout(req.ip)) blockIp(req.ip);
         }
         await doctor.save({ validateBeforeSave: false });
         logAudit({ userId: doctor._id, userRole: "doctor", action: "login_failed", resource: "doctor", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
@@ -429,7 +431,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
     }
     clearOTP(doctor.email);
 
-    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(doctor._id);
+    const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(doctor._id, req.headers["user-agent"]);
     const loggedindoctor = await Doctor.findById(doctor._id).select("-password -refreshtoken -passwordHistory");
 
     sendDoctorMail({
@@ -473,14 +475,22 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     if (decodetoken.role !== "doctor") throw new apiError(401, "Doctor session required");
 
-    const doctor = await Doctor.findById(decodetoken._id).select("+refreshtoken");
+    const doctor = await Doctor.findById(decodetoken._id).select("+refreshtoken +lastUserAgent");
     if (!doctor) throw new apiError(404, "Doctor not found");
 
     if (doctor.refreshtoken !== refreshtoken) {
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
-    const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(doctor._id);
+    const currentUserAgent = req.headers["user-agent"];
+    if (doctor.lastUserAgent && currentUserAgent && doctor.lastUserAgent !== currentUserAgent) {
+        doctor.refreshtoken = null;
+        await doctor.save({ validateBeforeSave: false });
+        logAudit({ userId: doctor._id, userRole: "doctor", action: "session_device_mismatch", resource: "doctor", ip: req.ip, result: "failure" });
+        throw new apiError(401, "Session from a different device detected. Please log in again.");
+    }
+
+    const { accesstoken, refreshtoken: newrefreshtoken } = await generateaccesstokenandrefreshtoken(doctor._id, currentUserAgent);
 
     return res
         .status(200)

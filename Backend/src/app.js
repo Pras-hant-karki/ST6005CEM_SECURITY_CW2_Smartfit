@@ -10,10 +10,15 @@ import appointmentRouter from "./routes/appointment.route.js";
 import paymentRouter from "./routes/payment.route.js";
 import cronRoutes from "./routes/cron.route.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
+import { ipBlockMiddleware } from "./middlewares/ipBlock.middleware.js";
 import { stripeWebhook } from "./controllers/payment.controller.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
+
+// Rejects IPs that have repeatedly triggered account lockouts, before any
+// other middleware runs.
+app.use(ipBlockMiddleware);
 
 // Security headers
 app.use(helmet({

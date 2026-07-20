@@ -27,6 +27,7 @@ const adminSchema = new Schema(
     },
     verificationdocs: { type: adminDocumentSchema, required: true },
     refreshtoken: { type: String, select: false },
+    lastUserAgent: { type: String, default: null, select: false },
     loginAttempts: { type: Number, default: 0, select: false },
     lockedUntil: { type: Date, default: null, select: false },
     passwordChangedAt: { type: Date, select: false },

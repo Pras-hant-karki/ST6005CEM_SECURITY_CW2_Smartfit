@@ -1,6 +1,8 @@
 import { Patient } from '../models/patient.model.js';
 import { Admin } from '../models/admin.model.js';
 import { Doctor } from '../models/doctor.model.js';
+import { Appointment } from '../models/appointment.model.js';
+import { Prescription } from '../models/prescription.model.js';
 import { asyncHandler } from '../utils/asynchandler.js';
 import { uploadLocal } from '../utils/localUpload.js';
 import { apiError } from '../utils/apiError.js';
@@ -9,7 +11,7 @@ import jwt from 'jsonwebtoken';
 import sendMail from '../services/mail.js';
 import { welcomeemailtemplate, logintemplate } from '../utils/emailtemplate.js';
 import { validatePassword } from '../utils/passwordValidator.js';
-import { trackAttempt } from '../utils/rateStore.js';
+import { trackAttempt, trackLockout, blockIp } from '../utils/rateStore.js';
 import { verifyCaptchaToken } from '../middlewares/captcha.middleware.js';
 import { logAudit } from '../services/auditLog.service.js';
 import { saveOTP, verifyOTP, clearOTP } from '../services/otp.js';
@@ -52,13 +54,14 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const PASSWORD_EXPIRY_DAYS = 90;
 
-const generateaccesstokenandrefreshtoken = async (patientId) => {
+const generateaccesstokenandrefreshtoken = async (patientId, userAgent) => {
     // BUG-001 fix: select "+refreshtoken" so it can be stored and compared on renewal.
     const patient = await Patient.findById(patientId).select("+refreshtoken");
     const accesstoken = patient.generateaccesstoken();
     const refreshtoken = patient.generaterefreshtoken();
 
     patient.refreshtoken = refreshtoken;
+    if (userAgent) patient.lastUserAgent = userAgent;
     await patient.save({ validateBeforeSave: false });
 
     return { accesstoken, newrefreshtoken: refreshtoken };
@@ -192,6 +195,9 @@ const loginPatient = asyncHandler(async (req, res) => {
         patient.loginAttempts = (patient.loginAttempts || 0) + 1;
         if (patient.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
             patient.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+            // An IP that causes repeated account lockouts (not just repeated
+            // failed attempts on one account) gets temporarily blocked outright.
+            if (trackLockout(req.ip)) blockIp(req.ip);
         }
         await patient.save({ validateBeforeSave: false });
         logAudit({ userId: patient._id, userRole: "patient", action: "login_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
@@ -264,7 +270,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
     }
     clearOTP(patient.email);
 
-    const { accesstoken, newrefreshtoken } = await generateaccesstokenandrefreshtoken(patient._id);
+    const { accesstoken, newrefreshtoken } = await generateaccesstokenandrefreshtoken(patient._id, req.headers["user-agent"]);
     const loggedInPatient = await Patient.findById(patient._id).select("-password -refreshtoken -passwordHistory");
 
     sendPatientMail({
@@ -315,14 +321,24 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     if (decoded.role !== "patient") throw new apiError(401, "Patient session required");
 
-    const patient = await Patient.findById(decoded._id).select("+refreshtoken");
+    const patient = await Patient.findById(decoded._id).select("+refreshtoken +lastUserAgent");
     if (!patient) throw new apiError(404, "Patient not found");
 
     if (patient.refreshtoken !== refreshToken) {
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
-    const { accesstoken, newrefreshtoken } = await generateaccesstokenandrefreshtoken(patient._id);
+    // Session-to-device binding: a refresh token replayed from a different
+    // device/browser than the one it was issued to is rejected outright.
+    const currentUserAgent = req.headers["user-agent"];
+    if (patient.lastUserAgent && currentUserAgent && patient.lastUserAgent !== currentUserAgent) {
+        patient.refreshtoken = null;
+        await patient.save({ validateBeforeSave: false });
+        logAudit({ userId: patient._id, userRole: "patient", action: "session_device_mismatch", resource: "patient", ip: req.ip, result: "failure" });
+        throw new apiError(401, "Session from a different device detected. Please log in again.");
+    }
+
+    const { accesstoken, newrefreshtoken } = await generateaccesstokenandrefreshtoken(patient._id, currentUserAgent);
 
     return res
         .status(200)
@@ -467,6 +483,67 @@ const getPatient = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, patient, "Current patient fetched successfully"));
 });
 
+// Data portability: lets a patient download their own profile, appointment,
+// and prescription records as a single JSON file (GDPR-style data export).
+const exportMyData = asyncHandler(async (req, res) => {
+    const patient = await Patient.findById(req.patient._id)
+        .select("-password -refreshtoken -passwordHistory -loginAttempts -lockedUntil");
+    if (!patient) throw new apiError(404, "Patient not found");
+
+    const appointments = await Appointment.find({ patient: req.patient._id })
+        .populate("doctor", "doctorname department");
+
+    const prescriptions = await Prescription.find({ "patientdetails.patientusername": patient.patientusername });
+
+    const exportData = {
+        profile: patient.toObject(),
+        appointments: appointments.map((a) => ({
+            doctor: a.doctor?.doctorname,
+            department: a.doctor?.department,
+            date: a.appointmentdate,
+            time: a.appointmenttime,
+            status: a.status,
+            symptoms: a.symptoms,
+            medicalhistory: a.medicalhistory,
+        })),
+        prescriptions: prescriptions.map((p) => ({
+            doctor: p.doctordetails?.doctorname,
+            diagnosis: p.diagonosis,
+            medicines: p.medicines,
+            issuedAt: p.createdAt,
+        })),
+        exportedAt: new Date().toISOString(),
+    };
+
+    logAudit({ userId: req.patient._id, userRole: "patient", action: "data_exported", resource: "patient", ip: req.ip, result: "success" });
+
+    res.setHeader("Content-Disposition", "attachment; filename=smartfit-data.json");
+    return res.status(200).json(new apiResponse(200, exportData, "Data exported successfully"));
+});
+
+// Right-to-erasure: requires the current password to prevent a hijacked
+// session from destroying the account without proving the user's identity.
+const deleteMyAccount = asyncHandler(async (req, res) => {
+    const { password } = req.body;
+    if (!password) throw new apiError(400, "Password confirmation is required to delete your account");
+
+    const patient = await Patient.findById(req.patient._id).select("+password");
+    if (!patient) throw new apiError(404, "Patient not found");
+
+    const isPasswordValid = await patient.ispasswordcorrect(password);
+    if (!isPasswordValid) throw new apiError(401, "Incorrect password");
+
+    await Patient.findByIdAndDelete(req.patient._id);
+
+    logAudit({ userId: req.patient._id, userRole: "patient", action: "account_deleted", resource: "patient", ip: req.ip, result: "success" });
+
+    return res
+        .status(200)
+        .clearCookie("accessToken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshToken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Account deleted successfully"));
+});
+
 export {
     registerPatient,
     loginPatient,
@@ -479,4 +556,6 @@ export {
     getprofiledetails,
     updateprofilepic,
     getPatient,
+    exportMyData,
+    deleteMyAccount,
 };

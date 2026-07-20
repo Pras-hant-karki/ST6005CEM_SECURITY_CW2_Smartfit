@@ -61,6 +61,16 @@ const otpLimiter = rateLimit({
     message: { statusCode: 429, message: "Too many OTP requests. Please wait before requesting another." },
 });
 
+// Tighter than the global limiter for profile/document writes — sensitive,
+// not auth-adjacent.
+const profileLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === "production" ? 20 : 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { statusCode: 429, message: "Too many profile requests. Please wait before trying again." },
+});
+
 // Auth — public
 router.post(
     "/register",
@@ -78,13 +88,14 @@ router.post("/renew-access-token", accesstokenrenewal);
 
 // Auth — protected
 router.post("/logout", verifyAuth("doctor"), logoutdoctor);
-router.patch("/update-profile", verifyAuth("doctor"), updateprofile);
-router.patch("/update-profilepicture", verifyAuth("doctor"), upload.single("profilepicture"), updateprofilepic);
+router.patch("/update-profile", profileLimiter, verifyAuth("doctor"), updateprofile);
+router.patch("/update-profilepicture", profileLimiter, verifyAuth("doctor"), upload.single("profilepicture"), updateprofilepic);
 router.get("/profile", verifyAuth("doctor"), getdoctorprofiledetailsprivate);
 router.get("/get-doctor", verifyAuth("doctor"), getCurrentDoctor);
 
 router.patch(
     "/update-document",
+    profileLimiter,
     verifyAuth("doctor"),
     upload.fields([
         { name: "citizenshipdocument", maxCount: 1 },
@@ -96,8 +107,8 @@ router.patch(
 
 // Password change (requires login + OTP)
 router.post("/update-password/send-otp", otpLimiter, verifyAuth("doctor"), sendotp);
-router.post("/update-password/verify-otp", verifyAuth("doctor"), verifyotp);
-router.patch("/update-password", verifyAuth("doctor"), updatepassword);
+router.post("/update-password/verify-otp", otpLimiter, verifyAuth("doctor"), verifyotp);
+router.patch("/update-password", otpLimiter, verifyAuth("doctor"), updatepassword);
 
 // Forgot password (public — rate limited in app.js)
 router.post("/forgot-password/send-otp", otpLimiter, sendForgetPasswordOtp);

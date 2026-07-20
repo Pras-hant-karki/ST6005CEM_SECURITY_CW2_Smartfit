@@ -27,3 +27,53 @@ export function trackAttempt(key, windowMs, limit) {
 export function resetAttempts(key) {
     store.delete(key);
 }
+
+// Tracks how many times an IP has triggered an account lockout (5 failed
+// logins) across any account, within a rolling window. Separate from
+// trackAttempt()'s CAPTCHA trigger — this one feeds isIpBlocked() below.
+const lockoutsByIp = new Map();
+
+// IPs currently under a temporary block, keyed by IP -> unblock timestamp.
+const blockedIps = new Map();
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of lockoutsByIp) {
+        if (now - v.first > v.window) lockoutsByIp.delete(k);
+    }
+    for (const [k, until] of blockedIps) {
+        if (now > until) blockedIps.delete(k);
+    }
+}, 60_000).unref();
+
+/**
+ * Records that an IP was responsible for one more account lockout.
+ * Returns true once the IP has caused `limit` lockouts within `windowMs`.
+ */
+export function trackLockout(ip, windowMs = 24 * 60 * 60 * 1000, limit = 5) {
+    if (!ip) return false;
+    const now = Date.now();
+    const e = lockoutsByIp.get(ip);
+    if (!e || now - e.first > windowMs) {
+        lockoutsByIp.set(ip, { count: 1, first: now, window: windowMs });
+        return false;
+    }
+    e.count += 1;
+    return e.count >= limit;
+}
+
+export function blockIp(ip, durationMs = 60 * 60 * 1000) {
+    if (!ip) return;
+    blockedIps.set(ip, Date.now() + durationMs);
+}
+
+export function isIpBlocked(ip) {
+    if (!ip) return false;
+    const until = blockedIps.get(ip);
+    if (!until) return false;
+    if (Date.now() > until) {
+        blockedIps.delete(ip);
+        return false;
+    }
+    return true;
+}
