@@ -3,11 +3,11 @@ import { useForm } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import toast, { Toaster } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowLeft, CheckCircle2, Edit, Loader2, Upload, User } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Download, Edit, Loader2, ShieldAlert, Trash2, Upload, User } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import PatientPortalLayout from "@/components/custom/PatientPortalLayout";
-import { getProfileDetails, updateProfile, updateProfilePic } from "@/services/patientApi";
+import { getProfileDetails, updateProfile, updateProfilePic, exportMyData, deleteMyAccount } from "@/services/patientApi";
 import { formatErrorMessage } from "../utils/formatError";
 
 const Field = ({ label, error, children }) => (
@@ -36,6 +36,10 @@ const UpdateProfile = () => {
   const [preview, setPreview] = useState(null);
   const [pictureSaving, setPictureSaving] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
 
   const {
     register,
@@ -114,6 +118,49 @@ const UpdateProfile = () => {
       toast.error("Something went wrong while updating profile picture!");
     } finally {
       setPictureSaving(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const res = await dispatch(exportMyData());
+      if (res.meta.requestStatus === "fulfilled") {
+        const blob = new Blob([JSON.stringify(res.payload, null, 2)], { type: "application/json" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "smartfit-data.json");
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success("Your data export has started downloading.");
+      } else {
+        toast.error(res.payload?.message || "Failed to export data");
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) {
+      toast.error("Enter your password to confirm account deletion");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await dispatch(deleteMyAccount(deletePassword));
+      if (res.meta.requestStatus === "fulfilled") {
+        toast.success("Account deleted. Goodbye!");
+        window.location.href = "/";
+      } else {
+        toast.error(res.payload?.message || "Failed to delete account");
+      }
+    } finally {
+      setDeleting(false);
+      setDeletePassword("");
     }
   };
 
@@ -261,6 +308,78 @@ const UpdateProfile = () => {
             </form>
           </section>
         </div>
+
+        <section className="mt-6 rounded-3xl bg-white p-7 shadow-xl shadow-slate-200/60">
+          <h2 className="mb-2 flex items-center gap-2 text-xl font-black text-slate-950">
+            <ShieldAlert className="h-5 w-5 text-amber-600" />
+            Your Data & Privacy
+          </h2>
+          <p className="mb-6 text-sm text-slate-500">
+            Download a copy of your profile, appointment, and prescription records, or permanently delete your account.
+          </p>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleExportData}
+                disabled={exporting}
+                className="h-12 w-full rounded-xl font-bold"
+              >
+                {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                Download My Data
+              </Button>
+            </div>
+
+            <div>
+              {!confirmingDelete ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="h-12 w-full rounded-xl font-bold"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Account
+                </Button>
+              ) : (
+                <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-xs font-semibold text-red-700">
+                    This permanently deletes your account. Enter your password to confirm.
+                  </p>
+                  <input
+                    type="password"
+                    placeholder="Current password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    className={inputClass}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleDeleteAccount}
+                      disabled={deleting}
+                      className="h-11 flex-1 rounded-xl font-bold"
+                    >
+                      {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Confirm Delete
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => { setConfirmingDelete(false); setDeletePassword(""); }}
+                      className="h-11 flex-1 rounded-xl font-bold"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </PatientPortalLayout>
   );

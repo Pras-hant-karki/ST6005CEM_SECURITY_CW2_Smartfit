@@ -42,8 +42,11 @@ const App = () => {
   }
   return (
     <>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-emerald-600 focus:px-4 focus:py-2 focus:text-white">
+        Skip to main content
+      </a>
       {!isPatientPortalRoute && <Navbar />}
-      <main className={isAuthRoute ? "bg-[#eafff0]" : isPatientPortalRoute ? "min-h-screen bg-[#f8f6ff]" : "min-h-screen bg-gray-50 p-4"}>
+      <main id="main-content" className={isAuthRoute ? "bg-[#eafff0]" : isPatientPortalRoute ? "min-h-screen bg-[#f8f6ff]" : "min-h-screen bg-gray-50 p-4"}>
         <Outlet />
       </main>
       {/* <Department /> */}

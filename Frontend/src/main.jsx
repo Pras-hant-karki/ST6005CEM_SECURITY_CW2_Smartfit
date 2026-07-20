@@ -32,6 +32,8 @@ import MedicalRecords from './pages/MedicalRecords'
 import BillingHistory from './pages/BillingHistory'
 import PaymentSuccess from './pages/PaymentSuccess'
 import PaymentCancel from './pages/PaymentCancel'
+import Privacy from './pages/Privacy'
+import Terms from './pages/Terms'
 
 const router = createBrowserRouter([
   {
@@ -65,6 +67,14 @@ const router = createBrowserRouter([
       {
         path: '/about',
         element: <About />
+      },
+      {
+        path: '/privacy',
+        element: <Privacy />
+      },
+      {
+        path: '/terms',
+        element: <Terms />
       },
       {
         path: '/appointments/book-appointment/:doctorid',

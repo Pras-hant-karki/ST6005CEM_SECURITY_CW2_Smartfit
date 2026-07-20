@@ -14,6 +14,8 @@ import {
   getDoctorProfile,
   getAllDepartments,
   getdoctorbydepartment,
+  exportMyData,
+  deleteMyAccount,
 } from "../../services/patientApi";
 
 const initialState = {
@@ -91,8 +93,8 @@ const patientSlice = createSlice({
     const patientThunks = [
       getProfileDetails, updateProfile, updateProfilePic, sendOtpForUpdate,
       verifyOtpForUpdate, updatePassword, sendForgotPasswordOtp, verifyForgotPasswordOtp,
-      resetForgottenPassword, getAllDoctors, getDoctorProfile, getAllDepartments, 
-      getdoctorbydepartment,
+      resetForgottenPassword, getAllDoctors, getDoctorProfile, getAllDepartments,
+      getdoctorbydepartment, exportMyData, deleteMyAccount,
     ];
 
     builder.addMatcher(isAnyOf(...patientThunks.map((t) => t.pending)), (state) => {

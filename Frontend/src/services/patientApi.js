@@ -174,6 +174,24 @@ export const getdoctorbydepartment = createAsyncThunk("patient/getdoctorbydepart
     }
 });
 
+export const exportMyData = createAsyncThunk("patient/exportMyData", async (_, { rejectWithValue }) => {
+    try {
+        const res = await api.get("/export-data");
+        return res.data.data;
+    } catch (err) {
+        return rejectWithValue(getApiError(err));
+    }
+});
+
+export const deleteMyAccount = createAsyncThunk("patient/deleteMyAccount", async (password, { rejectWithValue }) => {
+    try {
+        const res = await api.delete("/delete-account", { data: { password } });
+        return res.data;
+    } catch (err) {
+        return rejectWithValue(getApiError(err));
+    }
+});
+
 export const getCurrentPatient = createAsyncThunk(
     "auth/getCurrentPatient",
     async (_, { rejectWithValue }) => {

@@ -1,8 +1,14 @@
 import { MapPin, Phone, Share2, Mail } from "lucide-react";
+import { Link } from "react-router-dom";
 import logo from "../../assets/logo.png";
 
 const quickLinks = ["Departments", "Featured Doctors", "Virtual Consultations", "Medical Packages", "Careers"];
-const policies = ["Privacy Policy", "Terms of Service", "Emergency Services", "Patient Rights"];
+const policies = [
+  { label: "Privacy Policy", to: "/privacy" },
+  { label: "Terms of Service", to: "/terms" },
+  { label: "Emergency Services", to: null },
+  { label: "Patient Rights", to: null },
+];
 
 export default function Footer() {
   return (
@@ -43,8 +49,12 @@ export default function Footer() {
             <h3 className="text-sm font-bold text-emerald-600 uppercase tracking-wider">Policies</h3>
             <ul className="space-y-3">
               {policies.map((link) => (
-                <li key={link}>
-                  <a href="#" className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link}</a>
+                <li key={link.label}>
+                  {link.to ? (
+                    <Link to={link.to} className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link.label}</Link>
+                  ) : (
+                    <a href="#" className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link.label}</a>
+                  )}
                 </li>
               ))}
             </ul>
