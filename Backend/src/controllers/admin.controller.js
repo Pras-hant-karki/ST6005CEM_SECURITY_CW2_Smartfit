@@ -12,6 +12,7 @@ import { logAudit } from "../services/auditLog.service.js";
 import { AuditLog } from "../models/auditLog.model.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
+import { issueCsrfCookie, clearCsrfCookie } from "../utils/csrf.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
@@ -192,6 +193,8 @@ const loginadmin = asyncHandler(async (req, res) => {
 
         logAudit({ userId: admin._id, userRole: "admin", action: "login_success", resource: "admin", ip: req.ip, result: "success" });
 
+        issueCsrfCookie(res);
+
         return res
             .status(200)
             .cookie("accesstoken", accesstoken, ACCESS_COOKIE_OPTIONS)
@@ -263,6 +266,10 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     logAudit({ userId: admin._id, userRole: "admin", action: "login_success", resource: "admin", ip: req.ip, result: "success" });
 
+    // Rotate the CSRF token on login — the anonymous token issued before
+    // authentication is discarded in favor of one tied to this new session.
+    issueCsrfCookie(res);
+
     return res
         .status(200)
         .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
@@ -274,6 +281,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 const logoutadmin = asyncHandler(async (req, res) => {
     await Admin.findByIdAndUpdate(req.admin?._id, { $unset: { refreshtoken: 1 } }, { new: true });
     logAudit({ userId: req.admin?._id, userRole: "admin", action: "logout", resource: "admin", ip: req.ip, result: "success" });
+    clearCsrfCookie(res);
     return res
         .status(200)
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
@@ -292,6 +300,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
         // BUG-007 fix: wrap jwt.verify in try/catch.
         decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
+        clearCsrfCookie(res);
         throw new apiError(401, "Invalid or expired refresh token");
     }
 
@@ -301,6 +310,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
     if (!admin) throw new apiError(404, "Admin not found");
 
     if (admin.refreshtoken !== refreshtoken) {
+        clearCsrfCookie(res);
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
@@ -309,6 +319,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
         admin.refreshtoken = null;
         await admin.save({ validateBeforeSave: false });
         logAudit({ userId: admin._id, userRole: "admin", action: "session_device_mismatch", resource: "admin", ip: req.ip, result: "failure" });
+        clearCsrfCookie(res);
         throw new apiError(401, "Session from a different device detected. Please log in again.");
     }
 
@@ -351,6 +362,8 @@ const updatepassword = asyncHandler(async (req, res) => {
     admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
 
+    clearCsrfCookie(res);
+
     return res
         .status(200)
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
@@ -383,6 +396,8 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     admin.refreshtoken = null; // revoke all existing sessions, matching patient/doctor behavior
     admin.passwordChangedAt = new Date();
     await admin.save({ validateBeforeSave: false });
+
+    clearCsrfCookie(res);
 
     return res
         .status(200)

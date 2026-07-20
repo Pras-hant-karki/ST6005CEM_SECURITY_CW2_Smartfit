@@ -12,6 +12,7 @@ import { verifyCaptchaToken } from "../middlewares/captcha.middleware.js";
 import { logAudit } from "../services/auditLog.service.js";
 import { saveOTP, verifyOTP, clearOTP } from "../services/otp.js";
 import generateOtp from "../utils/otpgenerator.js";
+import { issueCsrfCookie, clearCsrfCookie } from "../utils/csrf.js";
 import bcrypt from "bcrypt";
 
 const sendDoctorMail = async (mailOptions) => {
@@ -442,6 +443,10 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     logAudit({ userId: doctor._id, userRole: "doctor", action: "login_success", resource: "doctor", ip: req.ip, result: "success" });
 
+    // Rotate the CSRF token on login — the anonymous token issued before
+    // authentication is discarded in favor of one tied to this new session.
+    issueCsrfCookie(res);
+
     return res
         .status(200)
         .clearCookie("mfaToken", CLEAR_COOKIE_OPTIONS)
@@ -453,6 +458,7 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 const logoutdoctor = asyncHandler(async (req, res) => {
     await Doctor.findByIdAndUpdate(req.doctor?._id, { $unset: { refreshtoken: 1 } }, { new: true });
     logAudit({ userId: req.doctor?._id, userRole: "doctor", action: "logout", resource: "doctor", ip: req.ip, result: "success" });
+    clearCsrfCookie(res);
     return res
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
         .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
@@ -470,6 +476,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
         // BUG-007 fix: jwt.verify throws, wrap in try/catch.
         decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
+        clearCsrfCookie(res);
         throw new apiError(401, "Invalid or expired refresh token");
     }
 
@@ -479,6 +486,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
     if (!doctor) throw new apiError(404, "Doctor not found");
 
     if (doctor.refreshtoken !== refreshtoken) {
+        clearCsrfCookie(res);
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
@@ -487,6 +495,7 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
         doctor.refreshtoken = null;
         await doctor.save({ validateBeforeSave: false });
         logAudit({ userId: doctor._id, userRole: "doctor", action: "session_device_mismatch", resource: "doctor", ip: req.ip, result: "failure" });
+        clearCsrfCookie(res);
         throw new apiError(401, "Session from a different device detected. Please log in again.");
     }
 
@@ -531,6 +540,8 @@ const updatepassword = asyncHandler(async (req, res) => {
     doctor.passwordChangedAt = new Date();
     await doctor.save({ validateBeforeSave: false });
 
+    clearCsrfCookie(res);
+
     return res
         .status(200)
         .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
@@ -564,6 +575,8 @@ const resetForgottenPassword = asyncHandler(async (req, res) => {
     doctor.refreshtoken = null;
     doctor.passwordChangedAt = new Date();
     await doctor.save({ validateBeforeSave: false });
+
+    clearCsrfCookie(res);
 
     return res
         .status(200)

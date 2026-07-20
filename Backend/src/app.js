@@ -11,6 +11,7 @@ import paymentRouter from "./routes/payment.route.js";
 import cronRoutes from "./routes/cron.route.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import { ipBlockMiddleware } from "./middlewares/ipBlock.middleware.js";
+import { ensureCsrfCookie, verifyCsrf } from "./middlewares/csrf.middleware.js";
 import { stripeWebhook } from "./controllers/payment.controller.js";
 
 const app = express();
@@ -72,7 +73,11 @@ app.use(
             }
         },
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
+        // X-CSRF-Token must be explicitly allow-listed — the three frontends
+        // run on different ports than this API, so every request carrying a
+        // custom header is cross-origin and subject to CORS preflight; without
+        // this, the browser blocks the request before it ever reaches verifyCsrf.
+        allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
         credentials: true,
     })
 );
@@ -101,6 +106,16 @@ app.use((req, _res, next) => {
     if (req.query) stripMongoOperators(req.query);
     next();
 });
+
+// CSRF protection (double-submit cookie). ensureCsrfCookie issues a token
+// for any client that doesn't have one yet (including pre-login visitors);
+// verifyCsrf then rejects any unsafe-method request whose X-CSRF-Token
+// header doesn't match it. Placed after cookie-parser/body-parsing (needs
+// req.cookies) and before the routers, so it applies uniformly to every
+// route registered below — the Stripe webhook is exempted inside verifyCsrf
+// itself (see csrf.middleware.js) since it's never called from a browser.
+app.use(ensureCsrfCookie);
+app.use(verifyCsrf);
 
 // Global rate limiter
 const limiter = rateLimit({
