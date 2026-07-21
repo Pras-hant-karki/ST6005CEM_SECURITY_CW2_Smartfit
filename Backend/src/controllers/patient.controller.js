@@ -63,7 +63,8 @@ const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const PASSWORD_EXPIRY_DAYS = 90;
 
 const generateaccesstokenandrefreshtoken = async (patientId, userAgent) => {
-    // BUG-001 fix: select "+refreshtoken" so it can be stored and compared on renewal.
+    // refreshtoken is select: false on the schema — must opt in explicitly
+    // here so it can be stored and compared again on the next renewal.
     const patient = await Patient.findById(patientId).select("+refreshtoken");
     const accesstoken = patient.generateaccesstoken();
     const refreshtoken = patient.generaterefreshtoken();
@@ -103,7 +104,6 @@ const registerPatient = asyncHandler(async (req, res) => {
         throw new apiError(400, "All fields are required");
     }
 
-    // BUG-018 fix: confirmPassword is now required, not optional.
     if (!confirmPassword) {
         throw new apiError(400, "Please confirm your password");
     }
@@ -349,14 +349,14 @@ const logoutPatient = asyncHandler(async (req, res) => {
 });
 
 const accesstokenrenewal = asyncHandler(async (req, res) => {
-    // BUG-008 fix: req.cookies is always {}, use optional chaining to actually read the value.
     const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) throw new apiError(401, "Unauthorized request");
 
     let decoded;
     try {
-        // BUG-007 fix: jwt.verify throws on failure — wrap in try/catch instead of dead if(!decoded).
+        // jwt.verify throws on an invalid/expired token rather than returning
+        // null, so the failure case is handled in the catch block below.
         decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
         // Expired/invalid refresh token means this session is over — the

@@ -113,6 +113,17 @@ export const verifyPayment = asyncHandler(async (req, res) => {
 });
 
 // POST /api/v1/payment/webhook  — raw body required; must be registered before express.json()
+//
+// INTERNAL — not a public API endpoint, and deliberately does not use the
+// apiResponse/apiError envelope used everywhere else. This is called by
+// Stripe's servers, not our own frontends or any API consumer; Stripe's own
+// webhook documentation expects (and this follows) a plain
+// `{ received: true }` / `{ error: "..." }` shape, and never parses our
+// envelope. It's also not wrapped in asyncHandler, since it must guarantee
+// Stripe always gets a well-formed acknowledgement — including on internal
+// failures — rather than falling through to the generic error middleware.
+// Exclude from public Swagger documentation, or document separately under
+// an "internal/webhooks" tag.
 export const stripeWebhook = async (req, res) => {
     const sig = req.headers["stripe-signature"];
     if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });

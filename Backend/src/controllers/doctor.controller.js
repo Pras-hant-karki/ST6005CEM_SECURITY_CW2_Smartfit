@@ -60,7 +60,8 @@ const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
 const PASSWORD_EXPIRY_DAYS = 90;
 
 const generateaccesstokenandrefreshtoken = async (doctorId, userAgent) => {
-    // BUG-001 fix: select "+refreshtoken" to allow comparison on renewal.
+    // refreshtoken is select: false on the schema — must opt in explicitly
+    // here so it can be stored and compared again on the next renewal.
     const doctor = await Doctor.findById(doctorId).select("+refreshtoken");
     const accesstoken = doctor.generateaccesstoken();
     const refreshtoken = doctor.generaterefreshtoken();
@@ -502,14 +503,14 @@ const logoutdoctor = asyncHandler(async (req, res) => {
 });
 
 const accesstokenrenewal = asyncHandler(async (req, res) => {
-    // BUG-008 fix: optional chaining — req.cookies is always {}, body fallback never worked.
     const refreshtoken = req.cookies?.refreshtoken;
 
     if (!refreshtoken) throw new apiError(401, "Unauthorized request");
 
     let decodetoken;
     try {
-        // BUG-007 fix: jwt.verify throws, wrap in try/catch.
+        // jwt.verify throws on an invalid/expired token rather than returning
+        // null, so the failure case is handled in the catch block below.
         decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
         clearCsrfCookie(res);

@@ -109,7 +109,8 @@ const isLocalDevOrigin = (origin) =>
 app.use(
     cors({
         origin: function (origin, callback) {
-            // BUG-015 fix: null/missing origin (e.g. curl, Postman) is only allowed in development.
+            // Requests with no Origin header (curl, Postman, server-to-server) are
+            // only allowed in development — production requires a real browser origin.
             if (!origin) {
                 if (!isProduction) return callback(null, true);
                 return callback(new Error("CORS: requests without an Origin header are not allowed in production"));
@@ -129,6 +130,9 @@ app.use(
 
 app.use(cookieparser());
 
+// Raw body required (not express.json()) — Stripe signature verification
+// needs the original, unparsed request bytes. INTERNAL endpoint — see the
+// Swagger-exclusion note on stripeWebhook in payment.controller.js.
 app.post("/api/v1/payment/webhook", express.raw({ type: "application/json" }), stripeWebhook);
 
 app.use(express.json({ limit: "20kb" }));
@@ -183,7 +187,7 @@ const adminAuthLimiter = rateLimit({
     },
 });
 
-// BUG-004 fix: OTP endpoints were previously unrated.
+
 const otpLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: isProduction ? 10 : 200,

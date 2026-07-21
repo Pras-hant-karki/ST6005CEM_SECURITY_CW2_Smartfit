@@ -104,7 +104,6 @@ router.patch("/update-password", otpLimiter, verifyAuth("patient"), updatepasswo
 router.post("/forgot-password/send-otp", otpLimiter, sendForgetPasswordOtp);
 router.post("/forgot-password/verify-otp", otpLimiter, verifyTempjwt, verifyForgotPasswordOtp);
 router.patch("/forgot-password/update-password", otpLimiter, verifyTempjwt, resetForgottenPassword);
-//bug is fixed by adding otp limiter into the otp endpoints
 
 // Public doctor/department lookups
 router.get("/doctors/:doctorid", getdoctorprofiledetails);

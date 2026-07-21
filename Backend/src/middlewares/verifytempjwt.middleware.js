@@ -11,7 +11,8 @@ const verifyTempjwt = asyncHandler(async (req, res, next) => {
 
     let decoded;
     try {
-        // BUG-007 fix: jwt.verify throws on failure; if(!decoded) after it is unreachable dead code.
+        // jwt.verify throws on an invalid/expired token rather than returning
+        // null, so the failure case is handled in the catch block below.
         decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
     } catch {
         throw new apiError(403, "Token invalid or expired");

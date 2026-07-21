@@ -56,7 +56,8 @@ const LOCKOUT_DURATION_MS = 30 * 60 * 1000;
 const PASSWORD_EXPIRY_DAYS = 90;
 
 const generateaccesstokenandrefreshtoken = async (adminId, userAgent) => {
-    // BUG-001 fix: select "+refreshtoken" to allow comparison during renewal.
+    // refreshtoken is select: false on the schema — must opt in explicitly
+    // here so it can be stored and compared again on the next renewal.
     const admin = await Admin.findById(adminId).select("+refreshtoken");
     const accesstoken = admin.generateaccesstoken();
     const refreshtoken = admin.generaterefreshtoken();
@@ -321,14 +322,14 @@ const logoutadmin = asyncHandler(async (req, res) => {
 });
 
 const accesstokenrenewal = asyncHandler(async (req, res) => {
-    // BUG-008 fix: optional chaining on cookies.
     const refreshtoken = req.cookies?.refreshtoken;
 
     if (!refreshtoken) throw new apiError(401, "Unauthorized request");
 
     let decodetoken;
     try {
-        // BUG-007 fix: wrap jwt.verify in try/catch.
+        // jwt.verify throws on an invalid/expired token rather than returning
+        // null, so the failure case is handled in the catch block below.
         decodetoken = jwt.verify(refreshtoken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
         clearCsrfCookie(res);

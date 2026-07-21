@@ -16,7 +16,6 @@ import {
     exportMyData,
     deleteMyAccount,
 } from "../controllers/admin.controller.js";
- // added update password & reset forgot password ?
 import { sendotp, sendForgetPasswordOtp, verifyForgotPasswordOtp } from "../controllers/otp.controller.js";
 import { verifyTempjwt } from "../middlewares/verifytempjwt.middleware.js";
 import { apiResponse } from "../utils/apiResponse.js";
@@ -82,6 +81,10 @@ const profileLimiter = rateLimit({
 
 
 const adminOnly = [verifyAuth("admin"), requireRole("admin")];
+
+// INTERNAL — raw private-file server (verification documents), not a
+// resource with its own request/response schema. Exclude from public
+// Swagger documentation, or document separately under an "internal/files" tag.
 router.get("/documents/:role/:doctype/:filename", adminOnly, (req, res) => {
     const filePath = path.join(process.cwd(), "private", "uploads", req.params.role, req.params.doctype, req.params.filename);
     res.sendFile(filePath, (err) => {
@@ -112,12 +115,14 @@ router.patch("/update-profile", profileLimiter, adminOnly, updateprofile);
 router.patch("/update-profilepicture", profileLimiter, adminOnly, upload.single("profilepicture"), updateprofilepic);
 router.get("/get-profile", adminOnly, getprofiledetails);
 router.get("/get-admin", adminOnly, getCurrentAdmin);
+// INTERNAL — sensitive security-monitoring data (recent failed logins, audit
+// event counts). Exclude from public Swagger documentation, or document
+// separately under an "internal/security" tag.
 router.get("/security-dashboard", adminOnly, getSecurityDashboard);
 router.patch("/update-password", adminOnly, updatepassword);
 router.get("/export-data", profileLimiter, adminOnly, exportMyData);
 router.post("/delete-account/send-otp", otpLimiter, adminOnly, sendotp);
 router.delete("/delete-account", profileLimiter, adminOnly, deleteMyAccount);
-// update password routes  added
 
 // Forgot password (public — rate limited in otp.controller.js)
 router.post("/forgot-password/send-otp", otpLimiter, sendForgetPasswordOtp);

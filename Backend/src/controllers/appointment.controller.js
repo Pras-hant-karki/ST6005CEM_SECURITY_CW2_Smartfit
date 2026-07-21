@@ -228,17 +228,17 @@ const cancelappointment = asyncHandler(async (req, res) => {
   )
     throw new apiError(403, "Not allowed");
 
-// fixed — refuse if it's already cancelled or already completed
   if (appointment.status === "Cancelled") throw new apiError(
     400, "Appointment is already cancelled");
   if (appointment.status === "Completed") throw new apiError(
     400, "Cannot modify a completed appointment");
 
   appointment.status = "Cancelled";
+  // deleteafter has a TTL index (see appointment.model.js) — MongoDB purges
+  // this document automatically 24h after cancellation.
   appointment.deleteafter = new Date(
     Date.now() + 24 * 60 * 60 * 1000);
     await appointment.save();
-    // now appointment status saved in real time in database, and will be deleted after 24 hours
   logAudit({ userId: req.patient?._id || req.doctor?._id, userRole: 
     req.patient ? "patient" : "doctor", action: "appointment_cancelled", 
     resource: `appointment/${appointmentid}`, ip: req.ip, result: "success" });
@@ -310,7 +310,6 @@ const updateappointment = asyncHandler(async (req, res) => {
   const updatedAppointment = await Appointment.findById(appointment._id)
     .populate("patient", "patientname patientusername age sex phonenumber email")
     .populate("doctor", "doctorname doctorusername department specialization qualification consultationfee");
-    // skipped the populate-and-format step used by every other appointment endpoint
 
   sendMail({
     to: updatedAppointment.patient.email,
@@ -325,8 +324,7 @@ const updateappointment = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new apiResponse(200, formatAppointment(updatedAppointment))); 
-    // bare ObjectId strings are returned now instead of nested user objects and no more exposing the internal __v field.
+    .json(new apiResponse(200, formatAppointment(updatedAppointment)));
 });
 
 
