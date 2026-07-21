@@ -16,20 +16,68 @@ import { stripeWebhook } from "./controllers/payment.controller.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
+const isSecureContext = isProduction || process.env.HTTPS_ENABLED === "true";
 
 // Rejects IPs that have repeatedly triggered account lockouts, before any
 // other middleware runs.
 app.use(ipBlockMiddleware);
 
-// Security headers
+// ---------------------------------------------------------------------------
+// Security headers (Helmet)
+// ---------------------------------------------------------------------------
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow serving static files to other origins
-    contentSecurityPolicy: isProduction ? undefined : false,  // disable CSP in dev to avoid blocking hot-reload
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            defaultSrc: ["'none'"],
+            scriptSrc: ["'none'"],
+            styleSrc: ["'none'"],
+            imgSrc: ["'self'"],
+            fontSrc: ["'none'"],
+            connectSrc: ["'none'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'none'"],
+            formAction: ["'none'"],
+            frameAncestors: ["'none'"],
+            ...(isSecureContext ? { upgradeInsecureRequests: [] } : {}),
+        },
+    },
+
+    strictTransportSecurity: {
+        maxAge: 31536000, // 1 year
+        includeSubDomains: true,
+        preload: false,
+    },
+
+    
+    frameguard: { action: "deny" },
+
+    referrerPolicy: { policy: "no-referrer" },
 }));
 
-// Static uploads (profile pictures, documents) must be servable by plain <img>/<a> tags,
-// which never send an Origin header — mount before the CORS Origin check so those
-// requests aren't rejected by the "no Origin in production" rule below.
+
+app.use((req, res, next) => {
+    res.setHeader(
+        "Permissions-Policy",
+        [
+            "camera=()",
+            "microphone=()",
+            "geolocation=()",
+            "payment=()",
+            "usb=()",
+            "magnetometer=()",
+            "gyroscope=()",
+            "accelerometer=()",
+            "fullscreen=(self)",
+        ].join(", ")
+    );
+    next();
+});
+
+
 app.use(express.static("public"));
 
 const envOrigins = [
@@ -73,16 +121,7 @@ app.use(
             }
         },
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        // X-CSRF-Token must be explicitly allow-listed — the three frontends
-        // run on different ports than this API, so every request carrying a
-        // custom header is cross-origin and subject to CORS preflight; without
-        // this, the browser blocks the request before it ever reaches verifyCsrf.
         allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
-        // Browsers hide all but a handful of "simple" response headers from
-        // cross-origin JS by default. The PDF data-export endpoints set
-        // Content-Disposition to name the downloaded file — without this,
-        // frontend code reading that header (to name the saved file) would
-        // silently get undefined on every app except the one proxied by Vite.
         exposedHeaders: ["Content-Disposition"],
         credentials: true,
     })
@@ -90,14 +129,11 @@ app.use(
 
 app.use(cookieparser());
 
-// Stripe webhook must receive the raw body BEFORE express.json() parses it.
-// Signature verification requires the original raw bytes from Stripe.
 app.post("/api/v1/payment/webhook", express.raw({ type: "application/json" }), stripeWebhook);
 
 app.use(express.json({ limit: "20kb" }));
 app.use(express.urlencoded({ extended: true, limit: "20kb" }));
 
-// Strip MongoDB operator keys ($-prefixed) from body and query to prevent NoSQL injection.
 const stripMongoOperators = (obj) => {
     if (Array.isArray(obj)) { obj.forEach(stripMongoOperators); return; }
     if (obj && typeof obj === "object") {
@@ -113,13 +149,6 @@ app.use((req, _res, next) => {
     next();
 });
 
-// CSRF protection (double-submit cookie). ensureCsrfCookie issues a token
-// for any client that doesn't have one yet (including pre-login visitors);
-// verifyCsrf then rejects any unsafe-method request whose X-CSRF-Token
-// header doesn't match it. Placed after cookie-parser/body-parsing (needs
-// req.cookies) and before the routers, so it applies uniformly to every
-// route registered below — the Stripe webhook is exempted inside verifyCsrf
-// itself (see csrf.middleware.js) since it's never called from a browser.
 app.use(ensureCsrfCookie);
 app.use(verifyCsrf);
 
