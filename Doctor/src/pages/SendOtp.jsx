@@ -33,6 +33,10 @@ function SendOtp() {
     }
   });
 
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const handleCaptchaVerify = useCallback((token) => setCaptchaToken(token), []);
+
   // Show loading while initializing user state
   if (!isInitialized) {
     return (
@@ -44,10 +48,6 @@ function SendOtp() {
       </div>
     );
   }
-
-  const [captchaRequired, setCaptchaRequired] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
-  const handleCaptchaVerify = useCallback((token) => setCaptchaToken(token), []);
 
   const submitHandler = async (data) => {
     try {

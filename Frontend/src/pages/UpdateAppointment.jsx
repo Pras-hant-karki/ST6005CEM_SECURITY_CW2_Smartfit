@@ -45,7 +45,7 @@ const UpdateAppointment = () => {
   
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState("");
-  const [currentViewMonth, setCurrentViewMonth] = useState(new Date());
+  const [, setCurrentViewMonth] = useState(new Date());
   const [doctorId, setDoctorId] = useState(null);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();

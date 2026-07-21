@@ -1,5 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
-import { isPending, isFulfilled, isRejected , isAnyOf } from "@reduxjs/toolkit";
+import { isPending, isFulfilled, isRejected } from "@reduxjs/toolkit";
 import {
   getAllPrescriptions,
   getPrescriptionDetails,
@@ -55,12 +55,12 @@ const prescriptionSlice = createSlice({
       }
     });
 
-    builder.addMatcher(isPending, (state, action) => {
+    builder.addMatcher(isPending, (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isFulfilled, (state) => {
       state.loading = false;
     });
 

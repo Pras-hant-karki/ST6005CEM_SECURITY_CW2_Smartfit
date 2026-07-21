@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieparser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
 import patientRouter from "./routes/patient.route.js";
 import doctorRouter from "./routes/doctor.route.js";
 import adminRouter from "./routes/admin.route.js";
@@ -13,6 +14,7 @@ import { errorMiddleware } from "./middlewares/error.middleware.js";
 import { ipBlockMiddleware } from "./middlewares/ipBlock.middleware.js";
 import { ensureCsrfCookie, verifyCsrf } from "./middlewares/csrf.middleware.js";
 import { stripeWebhook } from "./controllers/payment.controller.js";
+import { swaggerSpec } from "./docs/swagger.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -21,6 +23,45 @@ const isSecureContext = isProduction || process.env.HTTPS_ENABLED === "true";
 // Rejects IPs that have repeatedly triggered account lockouts, before any
 // other middleware runs.
 app.use(ipBlockMiddleware);
+
+// ---------------------------------------------------------------------------
+// API documentation (Swagger UI)
+//
+// Mounted before the strict API-wide CSP below, and given its own
+// permissive one, because Swagger UI's page needs to run its own bundled
+// JavaScript and inline styles — the API's default script-src 'none' would
+// otherwise leave the docs page blank. This only relaxes the policy for
+// /api-docs itself; every other route is unaffected and keeps the strict
+// policy untouched. Read-only (GET) throughout, so it needs no CSRF
+// exemption and no auth — the spec only documents the public API surface,
+// it doesn't expose any data itself.
+// ---------------------------------------------------------------------------
+// Raw spec, for importing into Postman/Insomnia or other OpenAPI tooling.
+app.get("/api-docs.json", (req, res) => res.json(swaggerSpec));
+
+app.use(
+    "/api-docs",
+    helmet({
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", "data:"],
+                connectSrc: ["'self'"],
+            },
+        },
+    }),
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+        customSiteTitle: "SmartFit Hospital Management System API Docs",
+        swaggerOptions: {
+            persistAuthorization: true,
+            displayRequestDuration: true,
+            docExpansion: "list",
+        },
+    })
+);
 
 // ---------------------------------------------------------------------------
 // Security headers (Helmet)

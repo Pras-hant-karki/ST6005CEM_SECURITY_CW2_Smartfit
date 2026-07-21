@@ -1,5 +1,5 @@
 
-import { isPending, isFulfilled, isRejected, isAnyOf, createSlice } from "@reduxjs/toolkit";
+import { isAnyOf, createSlice } from "@reduxjs/toolkit";
 import {
   getProfileDetails,
   updateProfile,
@@ -58,27 +58,27 @@ const patientSlice = createSlice({
     })
 
 
-    builder.addCase(sendOtpForUpdate.fulfilled, (state, action) => {
+    builder.addCase(sendOtpForUpdate.fulfilled, (state) => {
       state.otpStatus = "sent";
     });
 
-    builder.addCase(verifyOtpForUpdate.fulfilled, (state, action) => {
+    builder.addCase(verifyOtpForUpdate.fulfilled, (state) => {
       state.otpStatus = "verified";
     });
 
-    builder.addCase(updatePassword.fulfilled, (state, action) => {
+    builder.addCase(updatePassword.fulfilled, (state) => {
       state.passwordResetStatus = "updated";
     });
 
-    builder.addCase(sendForgotPasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(sendForgotPasswordOtp.fulfilled, (state) => {
       state.passwordResetStatus = "otp_sent";
     });
 
-    builder.addCase(verifyForgotPasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(verifyForgotPasswordOtp.fulfilled, (state) => {
       state.passwordResetStatus = "otp_verified";
     });
 
-    builder.addCase(resetForgottenPassword.fulfilled, (state, action) => {
+    builder.addCase(resetForgottenPassword.fulfilled, (state) => {
       state.passwordResetStatus = "reset_success";
     });
 

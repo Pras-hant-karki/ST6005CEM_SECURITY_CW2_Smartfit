@@ -99,7 +99,7 @@ const UpdateProfile = () => {
       } else {
         toast.error(res.payload?.message || "Failed to update profile");
       }
-    } catch (err) {
+    } catch {
       toast.error("Something went wrong!");
     } finally {
       setProfileSaving(false);
@@ -125,7 +125,7 @@ const UpdateProfile = () => {
       } else {
         toast.error(response.payload?.message || "Failed to update profile picture");
       }
-    } catch (err) {
+    } catch {
       toast.error("Something went wrong while updating profile picture!");
     } finally {
       setPictureSaving(false);

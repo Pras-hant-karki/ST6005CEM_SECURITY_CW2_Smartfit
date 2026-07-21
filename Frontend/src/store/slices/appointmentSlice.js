@@ -1,4 +1,4 @@
-import { isPending, isFulfilled, isRejected, createSlice, isAnyOf } from "@reduxjs/toolkit";
+import { createSlice, isAnyOf } from "@reduxjs/toolkit";
 import {
     checkAvailability,
     getAllAppointments,

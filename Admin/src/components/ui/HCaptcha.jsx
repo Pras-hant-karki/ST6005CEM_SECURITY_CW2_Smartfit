@@ -42,7 +42,7 @@ export default function HCaptcha({ onVerify }) {
 
         return () => {
             if (widgetRef.current !== null && typeof window.hcaptcha !== "undefined") {
-                try { window.hcaptcha.reset(widgetRef.current); } catch {}
+                try { window.hcaptcha.reset(widgetRef.current); } catch { /* widget already gone */ }
                 widgetRef.current = null;
             }
         };

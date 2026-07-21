@@ -1,5 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
-import { isPending, isFulfilled, isRejected , isAnyOf } from "@reduxjs/toolkit";
+import { isPending, isFulfilled, isRejected } from "@reduxjs/toolkit";
 import {
   getDoctorProfile,
   updateDoctorProfile,
@@ -64,36 +64,36 @@ const doctorSlice = createSlice({
     })
 
 
-    builder.addCase(sendUpdatetPasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(sendUpdatetPasswordOtp.fulfilled, (state) => {
       state.otpStatus = "sent";
     });
 
-    builder.addCase(verifyUpdatePasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(verifyUpdatePasswordOtp.fulfilled, (state) => {
       state.otpStatus = "verified";
     });
 
-    builder.addCase(updateDoctorPassword.fulfilled, (state, action) => {
+    builder.addCase(updateDoctorPassword.fulfilled, (state) => {
       state.passwordResetStatus = "updated";
     });
 
-    builder.addCase(sendForgotPasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(sendForgotPasswordOtp.fulfilled, (state) => {
       state.passwordResetStatus = "otp_sent";
     });
 
-    builder.addCase(verifyForgotPasswordOtp.fulfilled, (state, action) => {
+    builder.addCase(verifyForgotPasswordOtp.fulfilled, (state) => {
       state.passwordResetStatus = "otp_verified";
     });
 
-    builder.addCase(resetForgottenPassword.fulfilled, (state, action) => {
+    builder.addCase(resetForgottenPassword.fulfilled, (state) => {
       state.passwordResetStatus = "reset_success";
     });
 
-    builder.addMatcher(isPending, (state, action) => {
+    builder.addMatcher(isPending, (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isFulfilled, (state) => {
       state.loading = false;
     });
 

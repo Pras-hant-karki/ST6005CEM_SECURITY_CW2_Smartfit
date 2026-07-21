@@ -187,7 +187,7 @@ export const getCurrentDoctor = createAsyncThunk(
           try {
       const res = await api.get("/get-doctor");
       return res.data.data;
-    } catch (error) {
+    } catch {
       return rejectWithValue(null);
     }
     }

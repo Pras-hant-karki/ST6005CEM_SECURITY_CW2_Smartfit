@@ -1,4 +1,4 @@
-import { isPending, isFulfilled, isRejected , createSlice, isAnyOf} from "@reduxjs/toolkit";
+import { isPending, isFulfilled, isRejected, createSlice } from "@reduxjs/toolkit";
 import {
   getAllAppointments,
   getAppointmentDetails,
@@ -27,7 +27,7 @@ const appointmentSlice = createSlice({
     builder.addCase(getTodayAppointments.fulfilled, (state, action) => {
       state.todayappointments = action.payload;
     });
-    builder.addCase(verifyappointment.fulfilled, (state, action) => {
+    builder.addCase(verifyappointment.fulfilled, (state) => {
       state.verificationstatus = true;
     });
 
@@ -35,12 +35,12 @@ const appointmentSlice = createSlice({
       state.appointmentDetails = action.payload;
     });
 
-    builder.addMatcher(isPending, (state, action) => {
+    builder.addMatcher(isPending, (state) => {
       state.loading = true;
       state.error = null;
     });
 
-    builder.addMatcher(isFulfilled, (state, action) => {
+    builder.addMatcher(isFulfilled, (state) => {
       state.loading = false;
     });
 

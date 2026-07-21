@@ -84,7 +84,7 @@ function getDepartmentMeta(name = "") {
   return { iconKey: "general", category: "diagnostics" };
 }
 
-function normalizeDepartment(dept, index) {
+function normalizeDepartment(dept) {
   const name = dept.deptname || dept.name || "General Medicine";
   const meta = getDepartmentMeta(name);
 

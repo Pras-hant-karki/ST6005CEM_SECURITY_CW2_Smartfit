@@ -319,7 +319,7 @@ export const getAdmin = createAsyncThunk(
     try {
       const res = await api.get("/get-admin");
       return res.data.data;
-    } catch (error) {
+    } catch {
       return rejectWithValue(null);
     }
   }

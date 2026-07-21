@@ -68,7 +68,7 @@ const authSlice = createSlice({
       state.isAuthenticated = true;
     });
 
-    builder.addCase(getCurrentPatient.rejected, (state, action) => {
+    builder.addCase(getCurrentPatient.rejected, (state) => {
       state.user = null;
       state.isInitialized = true;
       state.isAuthenticated = false;

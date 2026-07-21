@@ -37,7 +37,7 @@ const CreatePrescription = () => {
   const navigate = useNavigate();
   const { appointmentid } = useParams();
 
-  const { appointmentDetails, loading, error } = useSelector(
+  const { appointmentDetails, loading } = useSelector(
     (state) => state.doctorAppointment
   );
 

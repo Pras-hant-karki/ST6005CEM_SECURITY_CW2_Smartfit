@@ -204,7 +204,7 @@ export default function Login() {
 
                                     <button
                                         type="button"
-                                        onClick={() => { setMfaRequired(false); setOtp(""); setLoginError(null); setPendingRole(null); setCaptchaRequired(false); setCaptchaToken(""); }}
+                                        onClick={() => { setMfaRequired(false); setOtp(""); setLoginError(null); setCaptchaRequired(false); setCaptchaToken(""); }}
                                         className="w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
                                     >
                                         ← Back to login

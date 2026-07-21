@@ -68,7 +68,6 @@ const AdminUpdateProfile = () => {
     register,
     handleSubmit,
     reset,
-    setValue,
     formState: { errors },
   } = useForm();
 
@@ -113,7 +112,7 @@ const AdminUpdateProfile = () => {
       } else {
         toast.error(res.payload?.message || "Failed to update profile");
       }
-    } catch (err) {
+    } catch {
       toast.error("Something went wrong!");
     }
   };

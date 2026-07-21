@@ -78,13 +78,12 @@ const LabTestDetails = () => {
 
   if (!labTest) return null;
 
-  const { 
+  const {
     tests,
     overall_status,
     report_date,
     verified_by,
     verified_at,
-    createdAt
   } = labTest;
 
   return (

@@ -209,7 +209,7 @@ const UpdateProfile = () => {
       } else {
         toast.error(res.payload?.message || "Failed to update profile picture");
       }
-    } catch (error) {
+    } catch {
       toast.error("Something went wrong while updating profile picture!");
     } finally {
       setPictureSaving(false);
@@ -239,7 +239,7 @@ const UpdateProfile = () => {
       } else {
         toast.error(res.payload?.message || "Failed to update documents");
       }
-    } catch (error) {
+    } catch {
       toast.error("Something went wrong while updating documents!");
     } finally {
       setDocumentSaving(false);

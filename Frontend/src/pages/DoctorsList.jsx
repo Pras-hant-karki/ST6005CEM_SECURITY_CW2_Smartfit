@@ -163,7 +163,7 @@ function DoctorImage({ image, name, initial, className = "" }) {
   );
 }
 
-function DoctorCard({ doctor, deptname, index, selectedAvailability }) {
+function DoctorCard({ doctor, deptname, selectedAvailability }) {
   const navigate = useNavigate();
   const doctorId = doctor._id;
   const image =
@@ -283,7 +283,7 @@ export default function DoctorsList() {
   }, [sourceDoctors]);
 
   const filteredDoctors = useMemo(() => {
-    return sourceDoctors.filter((doctor, index) => {
+    return sourceDoctors.filter((doctor) => {
       const name = doctor.doctorname || doctor.name || "";
       const department = doctor.department || "General Medicine";
       const specialty = doctor.specialization || doctor.specialty || "";

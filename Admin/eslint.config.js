@@ -23,7 +23,11 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
+      // cva()-based variant exports (badge.jsx, button.jsx) share a file with
+      // their component by shadcn/ui convention — downgraded to a warning
+      // rather than split into separate files, matching Frontend's config.
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
   {

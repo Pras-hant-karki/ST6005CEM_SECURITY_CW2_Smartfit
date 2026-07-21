@@ -1,4 +1,4 @@
-import react,{useId,forwardRef} from "react"
+import {useId,forwardRef} from "react"
 import { cn } from "@/lib/utils"
 
 function Input({

@@ -1,5 +1,4 @@
-import { createSlice } from "@reduxjs/toolkit";
-import { isPending, isFulfilled, isRejected, isAnyOf } from "@reduxjs/toolkit";
+import { createSlice, isAnyOf } from "@reduxjs/toolkit";
 import {
   getAllLabTests,
   getLabTestByPrescription,
