@@ -24,6 +24,7 @@ import { Router } from "express";
 import path from "path";
 
 import { upload } from "../middlewares/multer.middleware.js";
+import { sanitizeInput } from "../middlewares/sanitize.middleware.js";
 import { requireRole, verifyAuth } from "../middlewares/auth.middleware.js";
 import { reportSecurityEvent } from "../services/securityAlert.service.js";
 import { verifyMfaToken } from "../middlewares/mfa.middleware.js";
@@ -92,9 +93,15 @@ router.get("/documents/:role/:doctype/:filename", adminOnly, (req, res) => {
     });
 });
 
+// sanitizeInput runs again here, after upload.fields(): multer is what
+// actually parses multipart/form-data into req.body, and it runs after the
+// global sanitizeInput in app.js (which only ever sees a body already
+// parsed by express.json()/urlencoded() — never multipart). Route-specific
+// re-application is required for every multipart route in this file for
+// the same reason.
 // Auth — public
 router.post(
-    "/register", 
+    "/register",
     adminOnly, // role is verified now only admin can POST
     upload.fields([
         { name: "citizenshipdocument", maxCount: 1 },
@@ -102,6 +109,7 @@ router.post(
         { name: "profilepicture", maxCount: 1 },
         { name: "appointmentletter", maxCount: 1 },
     ]),
+    sanitizeInput,
     registeradmin
 );
 router.post("/login", loginadmin);
@@ -112,7 +120,7 @@ router.post("/renew-access-token", accesstokenrenewal);
 // Profile
 router.post("/logout", adminOnly, logoutadmin);
 router.patch("/update-profile", profileLimiter, adminOnly, updateprofile);
-router.patch("/update-profilepicture", profileLimiter, adminOnly, upload.single("profilepicture"), updateprofilepic);
+router.patch("/update-profilepicture", profileLimiter, adminOnly, upload.single("profilepicture"), sanitizeInput, updateprofilepic);
 router.get("/get-profile", adminOnly, getprofiledetails);
 router.get("/get-admin", adminOnly, getCurrentAdmin);
 // INTERNAL — sensitive security-monitoring data (recent failed logins, audit
@@ -146,6 +154,7 @@ router.post(
         { name: "profilepicture", maxCount: 1 },
         { name: "medicallicense", maxCount: 1 },
     ]),
+    sanitizeInput,
     createDoctorByAdmin
 );
 router.get("/doctors/:doctorid", adminOnly, getdoctorprofiledetails);
@@ -158,6 +167,7 @@ router.patch(
         { name: "profilepicture", maxCount: 1 },
         { name: "medicallicense", maxCount: 1 },
     ]),
+    sanitizeInput,
     updateDoctorByAdmin
 );
 router.delete("/doctors/:doctorid", adminOnly, deleteDoctorByAdmin);

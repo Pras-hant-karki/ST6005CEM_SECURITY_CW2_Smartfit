@@ -23,6 +23,7 @@ import {
     verifyForgotPasswordOtp,
 } from "../controllers/otp.controller.js";
 import { verifyAuth } from "../middlewares/auth.middleware.js";
+import { sanitizeInput } from "../middlewares/sanitize.middleware.js";
 import { reportSecurityEvent } from "../services/securityAlert.service.js";
 import { upload } from "../middlewares/multer.middleware.js";
 import { verifyTempjwt } from "../middlewares/verifytempjwt.middleware.js";
@@ -77,7 +78,13 @@ const profileLimiter = rateLimit({
 });
 
 // Auth — public
-router.post("/register", upload.single("profilepicture"), registerPatient);
+// sanitizeInput runs again here, after upload.single(): multer is what
+// actually parses multipart/form-data into req.body, and it runs after the
+// global sanitizeInput in app.js (which only ever sees a body already
+// parsed by express.json()/urlencoded() — never multipart). Route-specific
+// re-application is required for every multipart route below for the same
+// reason; see the identical comment there.
+router.post("/register", upload.single("profilepicture"), sanitizeInput, registerPatient);
 router.post("/login", loginPatient);
 router.post("/login/verify-mfa", verifyMfaToken, verifyLoginMfa);
 router.post("/renew-access-token", accesstokenrenewal);
@@ -87,7 +94,7 @@ router.post("/logout", verifyAuth("patient"), logoutPatient);
 
 // Profile
 router.patch("/update-profile", profileLimiter, verifyAuth("patient"), updateprofile);
-router.patch("/update-profilepicture", profileLimiter, verifyAuth("patient"), upload.single("profilepicture"), updateprofilepic);
+router.patch("/update-profilepicture", profileLimiter, verifyAuth("patient"), upload.single("profilepicture"), sanitizeInput, updateprofilepic);
 router.get("/get-profile", verifyAuth("patient"), getprofiledetails);
 router.get("/get-patient", verifyAuth("patient"), getPatient);
 router.get("/export-data", profileLimiter, verifyAuth("patient"), exportMyData);

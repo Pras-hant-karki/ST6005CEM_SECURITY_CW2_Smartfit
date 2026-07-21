@@ -19,6 +19,7 @@ import {
 import { Router } from "express";
 import { upload } from "../middlewares/multer.middleware.js";
 import { verifyAuth } from "../middlewares/auth.middleware.js";
+import { sanitizeInput } from "../middlewares/sanitize.middleware.js";
 import { reportSecurityEvent } from "../services/securityAlert.service.js";
 import { verifyTempjwt } from "../middlewares/verifytempjwt.middleware.js";
 import { verifyMfaToken } from "../middlewares/mfa.middleware.js";
@@ -87,6 +88,12 @@ const profileLimiter = rateLimit({
 });
 
 // Auth — public
+// sanitizeInput runs again here, after upload.fields(): multer is what
+// actually parses multipart/form-data into req.body, and it runs after the
+// global sanitizeInput in app.js (which only ever sees a body already
+// parsed by express.json()/urlencoded() — never multipart). Route-specific
+// re-application is required for every multipart route in this file for
+// the same reason.
 router.post(
     "/register",
     upload.fields([
@@ -95,6 +102,7 @@ router.post(
         { name: "profilepicture", maxCount: 1 },
         { name: "medicallicense", maxCount: 1 },
     ]),
+    sanitizeInput,
     registerdoctor
 );
 router.post("/login", logindoctor);
@@ -104,7 +112,7 @@ router.post("/renew-access-token", accesstokenrenewal);
 // Auth — protected
 router.post("/logout", verifyAuth("doctor"), logoutdoctor);
 router.patch("/update-profile", profileLimiter, verifyAuth("doctor"), updateprofile);
-router.patch("/update-profilepicture", profileLimiter, verifyAuth("doctor"), upload.single("profilepicture"), updateprofilepic);
+router.patch("/update-profilepicture", profileLimiter, verifyAuth("doctor"), upload.single("profilepicture"), sanitizeInput, updateprofilepic);
 router.get("/profile", verifyAuth("doctor"), getdoctorprofiledetailsprivate);
 router.get("/get-doctor", verifyAuth("doctor"), getCurrentDoctor);
 router.get("/export-data", profileLimiter, verifyAuth("doctor"), exportMyData);
@@ -120,6 +128,7 @@ router.patch(
         { name: "medicaldegree", maxCount: 1 },
         { name: "medicallicense", maxCount: 1 },
     ]),
+    sanitizeInput,
     updatedocument
 );
 

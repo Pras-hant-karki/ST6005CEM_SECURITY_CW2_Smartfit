@@ -13,6 +13,7 @@ import cronRoutes from "./routes/cron.route.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import { ipBlockMiddleware } from "./middlewares/ipBlock.middleware.js";
 import { ensureCsrfCookie, verifyCsrf } from "./middlewares/csrf.middleware.js";
+import { sanitizeInput } from "./middlewares/sanitize.middleware.js";
 import { stripeWebhook } from "./controllers/payment.controller.js";
 import { swaggerSpec } from "./docs/swagger.js";
 
@@ -193,6 +194,12 @@ app.use((req, _res, next) => {
     if (req.query) stripMongoOperators(req.query);
     next();
 });
+
+// Context-aware sanitization (XSS/control-character defense) — see
+// middlewares/sanitize.middleware.js. Distinct from, and runs after, the
+// NoSQL-operator stripping above: that guards query *structure*, this
+// guards string *content*, and neither duplicates the other.
+app.use(sanitizeInput);
 
 app.use(ensureCsrfCookie);
 app.use(verifyCsrf);
