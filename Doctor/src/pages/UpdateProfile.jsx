@@ -41,7 +41,10 @@ import {
   Calendar,
   Stethoscope,
   CheckCircle2,
-  ReceiptText
+  ReceiptText,
+  Download,
+  Trash2,
+  ShieldAlert,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -49,6 +52,9 @@ import {
   updateDoctorDocuments,
   updateDoctorProfile,
   updateDoctorProfilePic,
+  exportMyData,
+  sendDeleteAccountOtp,
+  deleteMyAccount,
 } from "@/services/doctorApi";
 
 const normalizeShifts = (doctor) => {
@@ -88,6 +94,14 @@ const UpdateProfile = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [pictureSaving, setPictureSaving] = useState(false);
   const [documentSaving, setDocumentSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteOtp, setDeleteOtp] = useState("");
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
 
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm();
@@ -229,6 +243,65 @@ const UpdateProfile = () => {
       toast.error("Something went wrong while updating documents!");
     } finally {
       setDocumentSaving(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const res = await dispatch(exportMyData());
+      if (res.meta.requestStatus === "fulfilled") {
+        const { blob, filename } = res.payload;
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success("Your data export PDF has started downloading.");
+      } else {
+        toast.error(res.payload?.message || "Failed to export data");
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleSendDeleteOtp = async () => {
+    setSendingOtp(true);
+    try {
+      const res = await dispatch(sendDeleteAccountOtp());
+      if (res.meta.requestStatus === "fulfilled") {
+        setOtpSent(true);
+        toast.success("A verification code has been emailed to you.");
+      } else {
+        toast.error(res.payload?.message || "Failed to send verification code");
+      }
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) return toast.error("Enter your password to confirm account deletion");
+    if (!deleteOtp) return toast.error("Enter the verification code emailed to you");
+    if (deleteConfirmText.trim().toUpperCase() !== "DELETE") return toast.error('Type "DELETE" to confirm this is permanent');
+
+    setDeleting(true);
+    try {
+      const res = await dispatch(deleteMyAccount({ password: deletePassword, otp: deleteOtp }));
+      if (res.meta.requestStatus === "fulfilled") {
+        toast.success("Account deleted. Goodbye!");
+        window.location.href = "/login";
+      } else {
+        toast.error(res.payload?.message || "Failed to delete account");
+      }
+    } finally {
+      setDeleting(false);
+      setDeletePassword("");
+      setDeleteOtp("");
     }
   };
 
@@ -725,6 +798,120 @@ const UpdateProfile = () => {
               </Card>
             </div>
           </div>
+
+          {/* Data & Privacy */}
+          <Card className="mt-8 shadow-lg border-0">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2 text-amber-700">
+                <ShieldAlert className="w-5 h-5" />
+                Your Data & Privacy
+              </CardTitle>
+              <CardDescription>
+                Download a copy of your professional record, or permanently delete your account.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-6 md:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleExportData}
+                  disabled={exporting}
+                  className="h-12 w-full gap-2"
+                >
+                  {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Download My Data
+                </Button>
+
+                {!confirmingDelete ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => setConfirmingDelete(true)}
+                    className="h-12 w-full gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Account
+                  </Button>
+                ) : (
+                  <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <p className="text-xs font-semibold text-red-700">
+                      This permanently deletes your account. If you have upcoming appointments, cancel or
+                      reassign them first. Your appointment/prescription/lab-test history is retained for
+                      medical records but is no longer linked to a login.
+                    </p>
+
+                    <Input
+                      type="password"
+                      placeholder="Current password"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                    />
+
+                    {!otpSent ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSendDeleteOtp}
+                        disabled={sendingOtp}
+                        className="h-10 w-full gap-2"
+                      >
+                        {sendingOtp && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Email me a verification code
+                      </Button>
+                    ) : (
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Verification code from your email"
+                        value={deleteOtp}
+                        onChange={(e) => setDeleteOtp(e.target.value)}
+                      />
+                    )}
+
+                    <div>
+                      <Label className="mb-1 block text-xs font-semibold text-red-700">
+                        Type DELETE to confirm
+                      </Label>
+                      <Input
+                        type="text"
+                        placeholder="DELETE"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={handleDeleteAccount}
+                        disabled={deleting || !otpSent}
+                        className="h-10 flex-1 gap-2"
+                      >
+                        {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Confirm Delete
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setConfirmingDelete(false);
+                          setDeletePassword("");
+                          setDeleteOtp("");
+                          setDeleteConfirmText("");
+                          setOtpSent(false);
+                        }}
+                        className="h-10 flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </>

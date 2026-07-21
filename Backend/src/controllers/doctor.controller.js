@@ -1,7 +1,14 @@
 import { asyncHandler } from "../utils/asynchandler.js";
 import { Doctor } from "../models/doctor.model.js";
+import { Appointment } from "../models/appointment.model.js";
+import { Prescription } from "../models/prescription.model.js";
+import Labtest from "../models/labtest.model.js";
+import { Payment } from "../models/payment.model.js";
+import { AuditLog } from "../models/auditLog.model.js";
 import { apiError } from "../utils/apiError.js";
 import { uploadLocal } from "../utils/localUpload.js";
+import { deleteUploadedFile, deleteUploadedFiles } from "../utils/fileCleanup.js";
+import { generatePersonalDataPdf } from "../services/pdfExport.service.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import jwt from "jsonwebtoken";
 import sendMail from "../services/mail.js";
@@ -339,7 +346,7 @@ const logindoctor = asyncHandler(async (req, res) => {
         $or: [{ email }, { doctorusername }],
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
-    if (!doctor) throw new apiError(401, "Invalid credentials");
+    if (!doctor || doctor.isDeleted) throw new apiError(401, "Invalid credentials");
     if (!doctor.isApproved) throw new apiError(403, "Account pending admin approval");
     // admin approval status visible
     if (doctor.lockedUntil && doctor.lockedUntil > new Date()) {
@@ -762,6 +769,220 @@ const getCurrentDoctor = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, doctor, "Current doctor fetched successfully"));
 });
 
+// Data portability: a doctor's own professional record, every appointment
+// they've held, prescriptions they've issued, lab tests they've ordered or
+// verified, payments received, and their own audit trail — as one PDF.
+const exportMyData = asyncHandler(async (req, res) => {
+    const doctor = await Doctor.findById(req.doctor._id).select("-password -refreshtoken -passwordHistory");
+    if (!doctor) throw new apiError(404, "Doctor not found");
+
+    const [appointments, prescriptions, labtests, payments, auditLogs] = await Promise.all([
+        Appointment.find({ doctor: doctor._id }).populate("patient", "patientname").sort({ appointmentdate: -1 }),
+        Prescription.find({
+            $or: [{ "doctordetails.doctorusername": doctor.doctorusername }, { "doctordetails._id": doctor._id }],
+        }).sort({ createdAt: -1 }),
+        Labtest.find({ doctor_id: doctor._id }).populate("patient_id", "patientname").sort({ createdAt: -1 }),
+        Payment.find({ doctorId: doctor._id }).sort({ createdAt: -1 }),
+        AuditLog.find({ userId: String(doctor._id) }).sort({ timestamp: -1 }).limit(200),
+    ]);
+
+    const formatDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB") : "—");
+    const formatDateTime = (d) => (d ? new Date(d).toLocaleString("en-GB") : "—");
+
+    const sections = [
+        {
+            heading: "Account Information",
+            type: "keyvalue",
+            rows: [
+                ["Doctor ID", String(doctor._id)],
+                ["Full Name", doctor.doctorname],
+                ["Username", doctor.doctorusername],
+                ["Email", doctor.email],
+                ["Phone Number", doctor.phonenumber || "—"],
+                ["Department", doctor.department || "—"],
+                ["Specialization", doctor.specialization || "—"],
+                ["Qualification", doctor.qualification || "—"],
+                ["Experience", doctor.experience != null ? `${doctor.experience} years` : "—"],
+                ["Consultation Fee", doctor.consultationfee != null ? doctor.consultationfee : "—"],
+                ["Admin Approved", doctor.isApproved ? "Yes" : "No"],
+                ["Account Created", formatDate(doctor.createdAt)],
+            ],
+        },
+        { heading: "Profile Picture", type: "profilePicture", url: doctor.verificationdocument?.profilepicture },
+        {
+            heading: "Uploaded Documents",
+            type: "table",
+            columns: [
+                { header: "Document", width: 0.5 },
+                { header: "On File", width: 0.5 },
+            ],
+            rows: [
+                ["Citizenship Document", doctor.verificationdocument?.citizenshipdocument ? "Yes" : "No"],
+                ["Medical Degree", doctor.verificationdocument?.medicaldegree ? "Yes" : "No"],
+                ["Medical License", doctor.verificationdocument?.medicallicense ? "Yes" : "No"],
+            ],
+        },
+        {
+            heading: "Appointments",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.16 },
+                { header: "Time", width: 0.14 },
+                { header: "Patient", width: 0.3 },
+                { header: "Status", width: 0.18 },
+                { header: "Symptoms", width: 0.22 },
+            ],
+            rows: appointments.map((a) => [
+                formatDate(a.appointmentdate),
+                a.appointmenttime || "—",
+                a.patient?.patientname || "—",
+                a.status,
+                a.symptoms || "—",
+            ]),
+        },
+        {
+            heading: "Prescriptions Issued",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.16 },
+                { header: "Patient", width: 0.22 },
+                { header: "Diagnosis", width: 0.3 },
+                { header: "Medicines", width: 0.32 },
+            ],
+            rows: prescriptions.map((p) => [
+                formatDate(p.createdAt),
+                p.patientdetails?.patientname || "—",
+                p.diagonosis || "—",
+                (p.medicines || []).map((m) => `${m.medicinename} ${m.dosage}`).join("; ") || "—",
+            ]),
+        },
+        {
+            heading: "Lab Tests Ordered / Verified",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.16 },
+                { header: "Patient", width: 0.24 },
+                { header: "Test(s)", width: 0.3 },
+                { header: "Status", width: 0.15 },
+                { header: "Verified", width: 0.15 },
+            ],
+            rows: labtests.map((l) => [
+                formatDate(l.report_date || l.createdAt),
+                l.patient_id?.patientname || "—",
+                (l.tests || []).map((t) => t.test_name).join(", ") || "—",
+                l.overall_status,
+                l.verified_by ? "Yes" : "No",
+            ]),
+        },
+        {
+            heading: "Payments Received",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.2 },
+                { header: "Amount", width: 0.2 },
+                { header: "Currency", width: 0.2 },
+                { header: "Status", width: 0.2 },
+                { header: "Stripe Session", width: 0.2 },
+            ],
+            rows: payments.map((p) => [
+                formatDate(p.createdAt),
+                (p.amount / 100).toFixed(2),
+                p.currency?.toUpperCase(),
+                p.status,
+                p.stripeSessionId,
+            ]),
+        },
+        {
+            heading: "Account Activity (Audit Log)",
+            type: "table",
+            columns: [
+                { header: "Timestamp", width: 0.28 },
+                { header: "Action", width: 0.28 },
+                { header: "Result", width: 0.16 },
+                { header: "IP Address", width: 0.28 },
+            ],
+            rows: auditLogs.map((a) => [formatDateTime(a.timestamp), a.action, a.result, a.ip || "—"]),
+        },
+    ];
+
+    logAudit({ userId: doctor._id, userRole: "doctor", action: "data_exported", resource: "doctor", ip: req.ip, result: "success" });
+
+    generatePersonalDataPdf(res, {
+        filename: `smartfit-data-export-${doctor.doctorusername}.pdf`,
+        reportTitle: "Doctor Data Export",
+        generatedFor: { name: doctor.doctorname, role: "Doctor", identifier: doctor.doctorusername },
+        sections,
+    });
+});
+
+// Right-to-erasure for doctor accounts. Same password + OTP + confirmation
+// flow as patient deletion, plus one extra business-logic guard: a doctor
+// with upcoming appointments can't just vanish — patients would show up to
+// an unstaffed slot. Soft-deletes for the same reason as Patient (see the
+// isDeleted field comment on the Doctor model): appointments, prescriptions,
+// lab tests, and payments all hold a required ObjectId reference to this
+// document.
+const deleteMyAccount = asyncHandler(async (req, res) => {
+    const { password, otp } = req.body;
+    if (!password) throw new apiError(400, "Password confirmation is required to delete your account");
+    if (!otp) throw new apiError(400, "OTP verification is required to delete your account");
+
+    const doctor = await Doctor.findById(req.doctor._id).select("+password");
+    if (!doctor) throw new apiError(404, "Doctor not found");
+
+    const isPasswordValid = await doctor.ispasswordcorrect(password);
+    if (!isPasswordValid) throw new apiError(401, "Incorrect password");
+
+    const otpResult = await verifyOTP(doctor.email, String(otp));
+    if (!otpResult.valid) {
+        if (otpResult.reason === "expired") throw new apiError(401, "OTP expired. Please request a new one and try again.");
+        if (otpResult.reason === "too_many_attempts") throw new apiError(429, "Too many incorrect OTP attempts. Please request a new OTP.");
+        throw new apiError(401, "Invalid OTP");
+    }
+    await clearOTP(doctor.email);
+
+    const upcomingAppointmentCount = await Appointment.countDocuments({
+        doctor: doctor._id,
+        status: { $in: ["Pending", "Confirmed"] },
+        appointmentdate: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+    });
+    if (upcomingAppointmentCount > 0) {
+        throw new apiError(
+            409,
+            `You have ${upcomingAppointmentCount} upcoming appointment(s). Please cancel or reassign them (or ask an admin to) before deleting your account.`
+        );
+    }
+
+    await deleteUploadedFiles([
+        doctor.verificationdocument?.profilepicture,
+        doctor.verificationdocument?.citizenshipdocument,
+        doctor.verificationdocument?.medicaldegree,
+        doctor.verificationdocument?.medicallicense,
+    ]);
+
+    const deletedId = doctor._id.toString();
+    doctor.isDeleted = true;
+    doctor.deletedAt = new Date();
+    doctor.doctorname = "Deleted Doctor";
+    doctor.email = `deleted-${deletedId}@smartfit.invalid`;
+    doctor.doctorusername = `deleted-${deletedId}`;
+    doctor.phonenumber = "";
+    doctor.verificationdocument = { citizenshipdocument: "", medicaldegree: "", medicallicense: "", profilepicture: "" };
+    doctor.refreshtoken = null;
+    doctor.lastUserAgent = null;
+    await doctor.save({ validateBeforeSave: false });
+
+    logAudit({ userId: deletedId, userRole: "doctor", action: "account_deleted", resource: "doctor", ip: req.ip, result: "success" });
+
+    clearCsrfCookie(res);
+
+    return res
+        .status(200)
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Account deleted successfully"));
+});
+
 export {
     registerdoctor,
     logindoctor,
@@ -781,4 +1002,6 @@ export {
     createDoctorByAdmin,
     deleteDoctorByAdmin,
     updateDoctorByAdmin,
+    exportMyData,
+    deleteMyAccount,
 };

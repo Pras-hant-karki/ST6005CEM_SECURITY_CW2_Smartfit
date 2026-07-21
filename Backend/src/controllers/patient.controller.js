@@ -3,8 +3,13 @@ import { Admin } from '../models/admin.model.js';
 import { Doctor } from '../models/doctor.model.js';
 import { Appointment } from '../models/appointment.model.js';
 import { Prescription } from '../models/prescription.model.js';
+import Labtest from '../models/labtest.model.js';
+import { Payment } from '../models/payment.model.js';
+import { AuditLog } from '../models/auditLog.model.js';
 import { asyncHandler } from '../utils/asynchandler.js';
 import { uploadLocal } from '../utils/localUpload.js';
+import { deleteUploadedFile } from '../utils/fileCleanup.js';
+import { generatePersonalDataPdf } from '../services/pdfExport.service.js';
 import { apiError } from '../utils/apiError.js';
 import { apiResponse } from '../utils/apiResponse.js';
 import jwt from 'jsonwebtoken';
@@ -162,9 +167,11 @@ const loginPatient = asyncHandler(async (req, res) => {
         $or: [{ patientusername }, { email }],
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
-    if (!patient) throw new apiError(401, "Invalid credentials");
-    // when we return the same status and message as a wrong password means 
+    if (!patient || patient.isDeleted) throw new apiError(401, "Invalid credentials");
+    // when we return the same status and message as a wrong password means
     // a stranger can no longer tell whether this email is registered
+    // (a deleted account gets the exact same response, for the same reason —
+    // it must not be distinguishable from "no such account")
 
 
     // Account lockout check
@@ -542,49 +549,160 @@ const getPatient = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, patient, "Current patient fetched successfully"));
 });
 
-// Data portability: lets a patient download their own profile, appointment,
-// and prescription records as a single JSON file (GDPR-style data export).
+// Data portability: lets a patient download every record their account owns
+// as a single professional PDF report (profile, appointments, medical
+// history notes, prescriptions, lab reports, payments, and their own audit
+// trail) rather than a raw JSON dump.
 const exportMyData = asyncHandler(async (req, res) => {
     const patient = await Patient.findById(req.patient._id)
         .select("-password -refreshtoken -passwordHistory -loginAttempts -lockedUntil");
     if (!patient) throw new apiError(404, "Patient not found");
 
-    const appointments = await Appointment.find({ patient: req.patient._id })
-        .populate("doctor", "doctorname department");
+    const [appointments, prescriptions, labtests, payments, auditLogs] = await Promise.all([
+        Appointment.find({ patient: patient._id }).populate("doctor", "doctorname department").sort({ appointmentdate: -1 }),
+        Prescription.find({ "patientdetails.patientusername": patient.patientusername }).sort({ createdAt: -1 }),
+        Labtest.find({ patient_id: patient._id }).populate("verified_by", "doctorname").sort({ createdAt: -1 }),
+        Payment.find({ patientId: patient._id }).sort({ createdAt: -1 }),
+        AuditLog.find({ userId: String(patient._id) }).sort({ timestamp: -1 }).limit(200),
+    ]);
 
-    const prescriptions = await Prescription.find({ "patientdetails.patientusername": patient.patientusername });
+    const formatDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB") : "—");
+    const formatDateTime = (d) => (d ? new Date(d).toLocaleString("en-GB") : "—");
 
-    const exportData = {
-        profile: patient.toObject(),
-        appointments: appointments.map((a) => ({
-            doctor: a.doctor?.doctorname,
-            department: a.doctor?.department,
-            date: a.appointmentdate,
-            time: a.appointmenttime,
-            status: a.status,
-            symptoms: a.symptoms,
-            medicalhistory: a.medicalhistory,
-        })),
-        prescriptions: prescriptions.map((p) => ({
-            doctor: p.doctordetails?.doctorname,
-            diagnosis: p.diagonosis,
-            medicines: p.medicines,
-            issuedAt: p.createdAt,
-        })),
-        exportedAt: new Date().toISOString(),
-    };
+    const medicalHistoryRows = appointments
+        .filter((a) => a.medicalhistory && a.medicalhistory.trim())
+        .map((a) => [formatDate(a.appointmentdate), a.doctor?.doctorname || "—", a.medicalhistory]);
 
-    logAudit({ userId: req.patient._id, userRole: "patient", action: "data_exported", resource: "patient", ip: req.ip, result: "success" });
+    const sections = [
+        {
+            heading: "Account Information",
+            type: "keyvalue",
+            rows: [
+                ["Patient ID", String(patient._id)],
+                ["Full Name", patient.patientname],
+                ["Username", patient.patientusername],
+                ["Email", patient.email],
+                ["Phone Number", patient.phonenumber],
+                ["Age", patient.age],
+                ["Gender", patient.sex],
+                ["Guardian Name", patient.guardianName || "—"],
+                ["Account Created", formatDate(patient.createdAt)],
+            ],
+        },
+        { heading: "Profile Picture", type: "profilePicture", url: patient.profilepicture },
+        {
+            heading: "Appointments",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.16 },
+                { header: "Time", width: 0.12 },
+                { header: "Doctor", width: 0.24 },
+                { header: "Department", width: 0.2 },
+                { header: "Status", width: 0.14 },
+                { header: "Symptoms", width: 0.14 },
+            ],
+            rows: appointments.map((a) => [
+                formatDate(a.appointmentdate),
+                a.appointmenttime || "—",
+                a.doctor?.doctorname || "—",
+                a.doctor?.department || "—",
+                a.status,
+                a.symptoms || "—",
+            ]),
+        },
+        {
+            heading: "Medical History Notes",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.18 },
+                { header: "Doctor", width: 0.25 },
+                { header: "Notes", width: 0.57 },
+            ],
+            rows: medicalHistoryRows,
+        },
+        {
+            heading: "Prescriptions",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.14 },
+                { header: "Doctor", width: 0.2 },
+                { header: "Diagnosis", width: 0.28 },
+                { header: "Medicines", width: 0.38 },
+            ],
+            rows: prescriptions.map((p) => [
+                formatDate(p.createdAt),
+                p.doctordetails?.doctorname || "—",
+                p.diagonosis || "—",
+                (p.medicines || []).map((m) => `${m.medicinename} ${m.dosage} (${m.frequency}, ${m.duration})`).join("; ") || "—",
+            ]),
+        },
+        {
+            heading: "Lab Reports",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.16 },
+                { header: "Test(s)", width: 0.36 },
+                { header: "Status", width: 0.18 },
+                { header: "Verified By", width: 0.3 },
+            ],
+            rows: labtests.map((l) => [
+                formatDate(l.report_date || l.createdAt),
+                (l.tests || []).map((t) => t.test_name).join(", ") || "—",
+                l.overall_status,
+                l.verified_by?.doctorname ? `Dr. ${l.verified_by.doctorname}` : "Not yet verified",
+            ]),
+        },
+        {
+            heading: "Payments",
+            type: "table",
+            columns: [
+                { header: "Date", width: 0.18 },
+                { header: "Amount", width: 0.18 },
+                { header: "Currency", width: 0.18 },
+                { header: "Status", width: 0.18 },
+                { header: "Stripe Session", width: 0.28 },
+            ],
+            rows: payments.map((p) => [
+                formatDate(p.createdAt),
+                (p.amount / 100).toFixed(2),
+                p.currency?.toUpperCase(),
+                p.status,
+                p.stripeSessionId,
+            ]),
+        },
+        {
+            heading: "Account Activity (Audit Log)",
+            type: "table",
+            columns: [
+                { header: "Timestamp", width: 0.28 },
+                { header: "Action", width: 0.28 },
+                { header: "Result", width: 0.16 },
+                { header: "IP Address", width: 0.28 },
+            ],
+            rows: auditLogs.map((a) => [formatDateTime(a.timestamp), a.action, a.result, a.ip || "—"]),
+        },
+    ];
 
-    res.setHeader("Content-Disposition", "attachment; filename=smartfit-data.json");
-    return res.status(200).json(new apiResponse(200, exportData, "Data exported successfully"));
+    logAudit({ userId: patient._id, userRole: "patient", action: "data_exported", resource: "patient", ip: req.ip, result: "success" });
+
+    generatePersonalDataPdf(res, {
+        filename: `smartfit-data-export-${patient.patientusername}.pdf`,
+        reportTitle: "Patient Data Export",
+        generatedFor: { name: patient.patientname, role: "Patient", identifier: patient.patientusername },
+        sections,
+    });
 });
 
-// Right-to-erasure: requires the current password to prevent a hijacked
-// session from destroying the account without proving the user's identity.
+// Right-to-erasure. Requires: current password + a freshly verified OTP
+// (sent to the account's registered email) + explicit frontend confirmation.
+// Soft-deletes rather than hard-deletes — see the isDeleted field comment on
+// the Patient model for why: Appointment/Payment/Labtest hold required
+// ObjectId references to this document, so removing it outright would
+// orphan every appointment, payment, and lab record this patient ever had.
 const deleteMyAccount = asyncHandler(async (req, res) => {
-    const { password } = req.body;
+    const { password, otp } = req.body;
     if (!password) throw new apiError(400, "Password confirmation is required to delete your account");
+    if (!otp) throw new apiError(400, "OTP verification is required to delete your account");
 
     const patient = await Patient.findById(req.patient._id).select("+password");
     if (!patient) throw new apiError(404, "Patient not found");
@@ -592,9 +710,41 @@ const deleteMyAccount = asyncHandler(async (req, res) => {
     const isPasswordValid = await patient.ispasswordcorrect(password);
     if (!isPasswordValid) throw new apiError(401, "Incorrect password");
 
-    await Patient.findByIdAndDelete(req.patient._id);
+    const otpResult = await verifyOTP(patient.email, String(otp));
+    if (!otpResult.valid) {
+        if (otpResult.reason === "expired") throw new apiError(401, "OTP expired. Please request a new one and try again.");
+        if (otpResult.reason === "too_many_attempts") throw new apiError(429, "Too many incorrect OTP attempts. Please request a new OTP.");
+        throw new apiError(401, "Invalid OTP");
+    }
+    await clearOTP(patient.email);
 
-    logAudit({ userId: req.patient._id, userRole: "patient", action: "account_deleted", resource: "patient", ip: req.ip, result: "success" });
+    // Preserve the appointment records, but reflect reality: a cancelled
+    // account can't show up for a future booking. Only touches appointments
+    // that haven't already reached a terminal state.
+    await Appointment.updateMany(
+        { patient: patient._id, status: { $in: ["Pending", "Confirmed"] } },
+        { $set: { status: "Cancelled" } }
+    );
+
+    // The profile picture is the only file this account owns on disk.
+    await deleteUploadedFile(patient.profilepicture);
+
+    const deletedId = patient._id.toString();
+    patient.isDeleted = true;
+    patient.deletedAt = new Date();
+    patient.patientname = "Deleted Patient";
+    patient.email = `deleted-${deletedId}@smartfit.invalid`;
+    patient.patientusername = `deleted-${deletedId}`;
+    patient.phonenumber = "0000000000";
+    patient.guardianName = "";
+    patient.profilepicture = "";
+    patient.refreshtoken = null;
+    patient.lastUserAgent = null;
+    await patient.save({ validateBeforeSave: false });
+
+    logAudit({ userId: deletedId, userRole: "patient", action: "account_deleted", resource: "patient", ip: req.ip, result: "success" });
+
+    clearCsrfCookie(res);
 
     return res
         .status(200)

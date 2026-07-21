@@ -192,3 +192,62 @@ export const getCurrentDoctor = createAsyncThunk(
     }
     }
 );
+
+// When a request uses responseType: "blob" (PDF export), a JSON error
+// response from the backend also arrives as a Blob instead of parsed JSON —
+// this reads it back out so error messages still surface normally.
+const getBlobErrorPayload = async (error) => {
+    const data = error.response?.data;
+    if (data instanceof Blob && data.type === "application/json") {
+        try {
+            return JSON.parse(await data.text());
+        } catch {
+            // fall through
+        }
+    }
+    return error.response?.data || "Export failed";
+};
+
+const getFilenameFromDisposition = (disposition, fallback = "smartfit-data-export.pdf") => {
+    const match = disposition?.match(/filename="?([^";]+)"?/);
+    return match ? match[1] : fallback;
+};
+
+// ✅ Export My Data (PDF)
+export const exportMyData = createAsyncThunk(
+    "doctor/exportMyDataForDoctor",
+    async (_, { rejectWithValue }) => {
+        try {
+            const res = await api.get("/export-data", { responseType: "blob" });
+            return { blob: res.data, filename: getFilenameFromDisposition(res.headers["content-disposition"]) };
+        } catch (error) {
+            return rejectWithValue(await getBlobErrorPayload(error));
+        }
+    }
+);
+
+// ✅ Delete My Account — OTP step
+export const sendDeleteAccountOtp = createAsyncThunk(
+    "doctor/sendDeleteAccountOtpForDoctor",
+    async (_, { rejectWithValue }) => {
+        try {
+            const res = await api.post("/delete-account/send-otp");
+            return res.data.data;
+        } catch (error) {
+            return rejectWithValue(error.response?.data || "Failed to send verification code");
+        }
+    }
+);
+
+// ✅ Delete My Account
+export const deleteMyAccount = createAsyncThunk(
+    "doctor/deleteMyAccountForDoctor",
+    async ({ password, otp }, { rejectWithValue }) => {
+        try {
+            const res = await api.delete("/delete-account", { data: { password, otp } });
+            return res.data;
+        } catch (error) {
+            return rejectWithValue(error.response?.data || "Failed to delete account");
+        }
+    }
+);

@@ -91,6 +91,7 @@ router.patch("/update-profilepicture", profileLimiter, verifyAuth("patient"), up
 router.get("/get-profile", verifyAuth("patient"), getprofiledetails);
 router.get("/get-patient", verifyAuth("patient"), getPatient);
 router.get("/export-data", profileLimiter, verifyAuth("patient"), exportMyData);
+router.post("/delete-account/send-otp", otpLimiter, verifyAuth("patient"), sendotp);
 router.delete("/delete-account", profileLimiter, verifyAuth("patient"), deleteMyAccount);
 
 // Password change (requires login + OTP)

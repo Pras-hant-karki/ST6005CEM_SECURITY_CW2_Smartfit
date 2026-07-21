@@ -336,3 +336,59 @@ export const adminGetSecurityDashboard = createAsyncThunk(
     }
   }
 );
+
+// When a request uses responseType: "blob" (PDF export), a JSON error
+// response from the backend also arrives as a Blob instead of parsed JSON —
+// this reads it back out so error messages still surface normally.
+const getBlobErrorPayload = async (error) => {
+  const data = error.response?.data;
+  if (data instanceof Blob && data.type === "application/json") {
+    try {
+      return JSON.parse(await data.text());
+    } catch {
+      // fall through
+    }
+  }
+  return error.response?.data || error.message;
+};
+
+const getFilenameFromDisposition = (disposition, fallback = "smartfit-data-export.pdf") => {
+  const match = disposition?.match(/filename="?([^";]+)"?/);
+  return match ? match[1] : fallback;
+};
+
+export const adminExportMyData = createAsyncThunk(
+  "admin/exportMyData",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await api.get("/export-data", { responseType: "blob" });
+      return { blob: res.data, filename: getFilenameFromDisposition(res.headers["content-disposition"]) };
+    } catch (error) {
+      return rejectWithValue(await getBlobErrorPayload(error));
+    }
+  }
+);
+
+export const adminSendDeleteAccountOtp = createAsyncThunk(
+  "admin/sendDeleteAccountOtp",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await api.post("/delete-account/send-otp");
+      return res.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+  }
+);
+
+export const adminDeleteMyAccount = createAsyncThunk(
+  "admin/deleteMyAccount",
+  async ({ password, otp }, { rejectWithValue }) => {
+    try {
+      const res = await api.delete("/delete-account", { data: { password, otp } });
+      return res.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+  }
+);

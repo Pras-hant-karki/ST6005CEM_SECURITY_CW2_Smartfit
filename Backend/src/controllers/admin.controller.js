@@ -2,6 +2,8 @@ import { asyncHandler } from "../utils/asynchandler.js";
 import { Admin } from "../models/admin.model.js";
 import { apiError } from "../utils/apiError.js";
 import { uploadLocal } from "../utils/localUpload.js";
+import { deleteUploadedFiles } from "../utils/fileCleanup.js";
+import { generatePersonalDataPdf } from "../services/pdfExport.service.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import sendMail from "../services/mail.js";
 import { welcomeemailtemplate, logintemplate } from "../utils/emailtemplate.js";
@@ -147,7 +149,7 @@ const loginadmin = asyncHandler(async (req, res) => {
         $or: [{ adminusername }, { email }],
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
-    if (!admin) throw new apiError(404, "Admin not found");
+    if (!admin || admin.isDeleted) throw new apiError(404, "Admin not found");
 
     if (admin.lockedUntil && admin.lockedUntil > new Date()) {
         const minutesLeft = Math.ceil((admin.lockedUntil - Date.now()) / 60000);
@@ -534,6 +536,130 @@ const getSecurityDashboard = asyncHandler(async (req, res) => {
     }, "Security dashboard data fetched"));
 });
 
+// Data portability: an admin's own account record plus their own audit
+// trail — deliberately NOT the whole hospital's data (that would be a
+// privacy problem in itself, not a "my data" export). This is why admin
+// export is a separate, smaller implementation from patient/doctor export:
+// admins don't have appointments, prescriptions, or lab results of their own.
+const exportMyData = asyncHandler(async (req, res) => {
+    const admin = await Admin.findById(req.admin._id).select("-password -refreshtoken -passwordHistory");
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    const auditLogs = await AuditLog.find({ userId: String(admin._id) }).sort({ timestamp: -1 }).limit(200);
+
+    const formatDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB") : "—");
+    const formatDateTime = (d) => (d ? new Date(d).toLocaleString("en-GB") : "—");
+
+    const sections = [
+        {
+            heading: "Account Information",
+            type: "keyvalue",
+            rows: [
+                ["Admin ID", String(admin._id)],
+                ["Full Name", admin.adminname],
+                ["Username", admin.adminusername],
+                ["Email", admin.email],
+                ["Phone Number", admin.phonenumber],
+                ["Account Created", formatDate(admin.createdAt)],
+            ],
+        },
+        { heading: "Profile Picture", type: "profilePicture", url: admin.verificationdocs?.profilepicture },
+        {
+            heading: "Uploaded Documents",
+            type: "table",
+            columns: [
+                { header: "Document", width: 0.5 },
+                { header: "On File", width: 0.5 },
+            ],
+            rows: [
+                ["Citizenship Document", admin.verificationdocs?.citizenshipdocument ? "Yes" : "No"],
+                ["Admin ID Document", admin.verificationdocs?.adminId ? "Yes" : "No"],
+                ["Appointment Letter", admin.verificationdocs?.appointmentletter ? "Yes" : "No"],
+            ],
+        },
+        {
+            heading: "Account Activity (Audit Log)",
+            type: "table",
+            columns: [
+                { header: "Timestamp", width: 0.28 },
+                { header: "Action", width: 0.28 },
+                { header: "Result", width: 0.16 },
+                { header: "IP Address", width: 0.28 },
+            ],
+            rows: auditLogs.map((a) => [formatDateTime(a.timestamp), a.action, a.result, a.ip || "—"]),
+        },
+    ];
+
+    logAudit({ userId: admin._id, userRole: "admin", action: "data_exported", resource: "admin", ip: req.ip, result: "success" });
+
+    generatePersonalDataPdf(res, {
+        filename: `smartfit-data-export-${admin.adminusername}.pdf`,
+        reportTitle: "Admin Data Export",
+        generatedFor: { name: admin.adminname, role: "Admin", identifier: admin.adminusername },
+        sections,
+    });
+});
+
+// Right-to-erasure for admin accounts. Same password + OTP + confirmation
+// flow as patient/doctor deletion, plus a business-logic guard this role
+// uniquely needs: deleting the last remaining admin would leave nobody able
+// to administer the hospital system at all, so it's blocked outright.
+// Soft-deletes for consistency with Patient/Doctor (see the isDeleted field
+// comment on the Admin model).
+const deleteMyAccount = asyncHandler(async (req, res) => {
+    const { password, otp } = req.body;
+    if (!password) throw new apiError(400, "Password confirmation is required to delete your account");
+    if (!otp) throw new apiError(400, "OTP verification is required to delete your account");
+
+    const admin = await Admin.findById(req.admin._id).select("+password");
+    if (!admin) throw new apiError(404, "Admin not found");
+
+    const isPasswordValid = await admin.ispasswordcorrect(password);
+    if (!isPasswordValid) throw new apiError(401, "Incorrect password");
+
+    const remainingAdmins = await Admin.countDocuments({ isDeleted: { $ne: true }, _id: { $ne: admin._id } });
+    if (remainingAdmins === 0) {
+        throw new apiError(409, "You are the last remaining admin account. Create another admin before deleting this one.");
+    }
+
+    const otpResult = await verifyOTP(admin.email, String(otp));
+    if (!otpResult.valid) {
+        if (otpResult.reason === "expired") throw new apiError(401, "OTP expired. Please request a new one and try again.");
+        if (otpResult.reason === "too_many_attempts") throw new apiError(429, "Too many incorrect OTP attempts. Please request a new OTP.");
+        throw new apiError(401, "Invalid OTP");
+    }
+    await clearOTP(admin.email);
+
+    await deleteUploadedFiles([
+        admin.verificationdocs?.profilepicture,
+        admin.verificationdocs?.citizenshipdocument,
+        admin.verificationdocs?.adminId,
+        admin.verificationdocs?.appointmentletter,
+    ]);
+
+    const deletedId = admin._id.toString();
+    admin.isDeleted = true;
+    admin.deletedAt = new Date();
+    admin.adminname = "Deleted Admin";
+    admin.email = `deleted-${deletedId}@smartfit.invalid`;
+    admin.adminusername = `deleted-${deletedId}`;
+    admin.phonenumber = Date.now().toString().slice(-10); // schema requires a unique 10-digit numeric value
+    admin.verificationdocs = { citizenshipdocument: "", adminId: "", profilepicture: "", appointmentletter: "" };
+    admin.refreshtoken = null;
+    admin.lastUserAgent = null;
+    await admin.save({ validateBeforeSave: false });
+
+    logAudit({ userId: deletedId, userRole: "admin", action: "account_deleted", resource: "admin", ip: req.ip, result: "success" });
+
+    clearCsrfCookie(res);
+
+    return res
+        .status(200)
+        .clearCookie("accesstoken", CLEAR_COOKIE_OPTIONS)
+        .clearCookie("refreshtoken", CLEAR_COOKIE_OPTIONS)
+        .json(new apiResponse(200, {}, "Account deleted successfully"));
+});
+
 export {
     registeradmin,
     loginadmin,
@@ -547,4 +673,6 @@ export {
     updateprofilepic,
     getCurrentAdmin,
     getSecurityDashboard,
+    exportMyData,
+    deleteMyAccount,
 };

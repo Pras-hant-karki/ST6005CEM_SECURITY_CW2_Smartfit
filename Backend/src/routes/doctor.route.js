@@ -13,6 +13,8 @@ import {
     updatedocument,
     getdoctorprofiledetailsprivate,
     getCurrentDoctor,
+    exportMyData,
+    deleteMyAccount,
 } from "../controllers/doctor.controller.js";
 import { Router } from "express";
 import { upload } from "../middlewares/multer.middleware.js";
@@ -105,6 +107,9 @@ router.patch("/update-profile", profileLimiter, verifyAuth("doctor"), updateprof
 router.patch("/update-profilepicture", profileLimiter, verifyAuth("doctor"), upload.single("profilepicture"), updateprofilepic);
 router.get("/profile", verifyAuth("doctor"), getdoctorprofiledetailsprivate);
 router.get("/get-doctor", verifyAuth("doctor"), getCurrentDoctor);
+router.get("/export-data", profileLimiter, verifyAuth("doctor"), exportMyData);
+router.post("/delete-account/send-otp", otpLimiter, verifyAuth("doctor"), sendotp);
+router.delete("/delete-account", profileLimiter, verifyAuth("doctor"), deleteMyAccount);
 
 router.patch(
     "/update-document",

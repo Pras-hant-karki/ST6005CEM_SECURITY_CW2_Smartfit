@@ -78,6 +78,12 @@ app.use(
         // custom header is cross-origin and subject to CORS preflight; without
         // this, the browser blocks the request before it ever reaches verifyCsrf.
         allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
+        // Browsers hide all but a handful of "simple" response headers from
+        // cross-origin JS by default. The PDF data-export endpoints set
+        // Content-Disposition to name the downloaded file — without this,
+        // frontend code reading that header (to name the saved file) would
+        // silently get undefined on every app except the one proxied by Vite.
+        exposedHeaders: ["Content-Disposition"],
         credentials: true,
     })
 );

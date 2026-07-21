@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
 import './index.css'
@@ -6,18 +6,22 @@ import App from './App.jsx'
 import store from './store/store.js'
 import { Provider } from 'react-redux'
 import AuthLayout from './components/custom/authLayout'
-import AdminDashboard from './components/custom/AdminDashboard'
-import AdminLogin from './pages/AdminLogin'
-import AdminAppointmentsPage from './pages/AdminAppointmentPage'
-import AppointmentDetails from './pages/AppointmentDetails'
-import AdminDoctorProfile from './pages/doctorprofile'
-import DoctorList from './pages/DoctorsList'
-import AddDoctor from './pages/AddDoctor'
-import EditDoctor from './pages/EditDoctor'
-import AdminDepartmentList from './pages/DepartmentList'
-import AdminUpdateProfile from './pages/UpdateProfile'
-import AdminProfile from './pages/AdminProfile'
-import SecurityDashboard from './pages/SecurityDashboard'
+
+// AuthLayout is a thin wrapper mounted on nearly every route, so it stays a
+// regular import — everything else is route content and is only fetched
+// when its route actually matches, keeping the initial JS payload small.
+const AdminDashboard = lazy(() => import('./components/custom/AdminDashboard'))
+const AdminLogin = lazy(() => import('./pages/AdminLogin'))
+const AdminAppointmentsPage = lazy(() => import('./pages/AdminAppointmentPage'))
+const AppointmentDetails = lazy(() => import('./pages/AppointmentDetails'))
+const AdminDoctorProfile = lazy(() => import('./pages/doctorprofile'))
+const DoctorList = lazy(() => import('./pages/DoctorsList'))
+const AddDoctor = lazy(() => import('./pages/AddDoctor'))
+const EditDoctor = lazy(() => import('./pages/EditDoctor'))
+const AdminDepartmentList = lazy(() => import('./pages/DepartmentList'))
+const AdminUpdateProfile = lazy(() => import('./pages/UpdateProfile'))
+const AdminProfile = lazy(() => import('./pages/AdminProfile'))
+const SecurityDashboard = lazy(() => import('./pages/SecurityDashboard'))
 
 const router = createBrowserRouter([
   {

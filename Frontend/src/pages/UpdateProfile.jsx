@@ -7,7 +7,14 @@ import { AlertCircle, ArrowLeft, CheckCircle2, Download, Edit, Loader2, ShieldAl
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import PatientPortalLayout from "@/components/custom/PatientPortalLayout";
-import { getProfileDetails, updateProfile, updateProfilePic, exportMyData, deleteMyAccount } from "@/services/patientApi";
+import {
+  getProfileDetails,
+  updateProfile,
+  updateProfilePic,
+  exportMyData,
+  sendDeleteAccountOtp,
+  deleteMyAccount,
+} from "@/services/patientApi";
 import { formatErrorMessage } from "../utils/formatError";
 
 const Field = ({ label, error, children }) => (
@@ -40,6 +47,10 @@ const UpdateProfile = () => {
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
+  const [deleteOtp, setDeleteOtp] = useState("");
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
 
   const {
     register,
@@ -126,16 +137,16 @@ const UpdateProfile = () => {
     try {
       const res = await dispatch(exportMyData());
       if (res.meta.requestStatus === "fulfilled") {
-        const blob = new Blob([JSON.stringify(res.payload, null, 2)], { type: "application/json" });
+        const { blob, filename } = res.payload;
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.setAttribute("download", "smartfit-data.json");
+        link.setAttribute("download", filename);
         document.body.appendChild(link);
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
-        toast.success("Your data export has started downloading.");
+        toast.success("Your data export PDF has started downloading.");
       } else {
         toast.error(res.payload?.message || "Failed to export data");
       }
@@ -144,14 +155,37 @@ const UpdateProfile = () => {
     }
   };
 
+  const handleSendDeleteOtp = async () => {
+    setSendingOtp(true);
+    try {
+      const res = await dispatch(sendDeleteAccountOtp());
+      if (res.meta.requestStatus === "fulfilled") {
+        setOtpSent(true);
+        toast.success("A verification code has been emailed to you.");
+      } else {
+        toast.error(res.payload?.message || "Failed to send verification code");
+      }
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!deletePassword) {
       toast.error("Enter your password to confirm account deletion");
       return;
     }
+    if (!deleteOtp) {
+      toast.error("Enter the verification code emailed to you");
+      return;
+    }
+    if (deleteConfirmText.trim().toUpperCase() !== "DELETE") {
+      toast.error('Type "DELETE" to confirm this is permanent');
+      return;
+    }
     setDeleting(true);
     try {
-      const res = await dispatch(deleteMyAccount(deletePassword));
+      const res = await dispatch(deleteMyAccount({ password: deletePassword, otp: deleteOtp }));
       if (res.meta.requestStatus === "fulfilled") {
         toast.success("Account deleted. Goodbye!");
         window.location.href = "/";
@@ -161,6 +195,7 @@ const UpdateProfile = () => {
     } finally {
       setDeleting(false);
       setDeletePassword("");
+      setDeleteOtp("");
     }
   };
 
@@ -346,8 +381,10 @@ const UpdateProfile = () => {
               ) : (
                 <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-4">
                   <p className="text-xs font-semibold text-red-700">
-                    This permanently deletes your account. Enter your password to confirm.
+                    This permanently deletes your account. Your appointment, prescription, and payment
+                    history is retained for medical/financial records but is no longer linked to a login.
                   </p>
+
                   <input
                     type="password"
                     placeholder="Current password"
@@ -355,12 +392,48 @@ const UpdateProfile = () => {
                     onChange={(e) => setDeletePassword(e.target.value)}
                     className={inputClass}
                   />
+
+                  {!otpSent ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSendDeleteOtp}
+                      disabled={sendingOtp}
+                      className="h-11 w-full rounded-xl font-bold"
+                    >
+                      {sendingOtp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Email me a verification code
+                    </Button>
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Verification code from your email"
+                      value={deleteOtp}
+                      onChange={(e) => setDeleteOtp(e.target.value)}
+                      className={inputClass}
+                    />
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-red-700">
+                      Type DELETE to confirm
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="DELETE"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+
                   <div className="flex gap-2">
                     <Button
                       type="button"
                       variant="destructive"
                       onClick={handleDeleteAccount}
-                      disabled={deleting}
+                      disabled={deleting || !otpSent}
                       className="h-11 flex-1 rounded-xl font-bold"
                     >
                       {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -369,7 +442,13 @@ const UpdateProfile = () => {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => { setConfirmingDelete(false); setDeletePassword(""); }}
+                      onClick={() => {
+                        setConfirmingDelete(false);
+                        setDeletePassword("");
+                        setDeleteOtp("");
+                        setDeleteConfirmText("");
+                        setOtpSent(false);
+                      }}
                       className="h-11 flex-1 rounded-xl font-bold"
                     >
                       Cancel

@@ -81,8 +81,8 @@ const DoctorDashboard = () => {
     loading: appointmentsLoading,
     error: appointmentError,
   } = useSelector((state) => state.doctorAppointment);
-  const { prescriptions = [], loading: prescriptionsLoading } = useSelector((state) => state.prescription);
-  const { labtests = [], loading: labtestsLoading } = useSelector((state) => state.labtest);
+  const { prescriptions = [] } = useSelector((state) => state.prescription);
+  const { labtests = [] } = useSelector((state) => state.labtest);
 
   useEffect(() => {
     dispatch(getTodayAppointments());
@@ -115,7 +115,12 @@ const DoctorDashboard = () => {
 
   const doctorName = doctor?.doctorname || "Doctor";
   const department = titleCase(doctor?.department || "Department not set");
-  const isLoading = authLoading || appointmentsLoading || prescriptionsLoading || labtestsLoading;
+  // Localized to the schedule section, and only on its own first load (no
+  // data yet) — prescriptions/lab tests loading independently shouldn't
+  // block the appointment schedule from rendering, and once appointments
+  // have loaded once, a background refresh keeps showing the stale list
+  // instead of flashing a spinner over it.
+  const isScheduleLoading = (authLoading || appointmentsLoading) && todaySchedule.length === 0;
 
   return (
     <div className="-m-4 flex min-h-screen bg-[#f8f5ff] font-sans text-slate-900">
@@ -162,7 +167,7 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="mt-5 space-y-3">
-            {isLoading ? (
+            {isScheduleLoading ? (
               <div className="flex items-center justify-center rounded-xl border border-slate-100 py-12 text-slate-500">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Loading real appointments...

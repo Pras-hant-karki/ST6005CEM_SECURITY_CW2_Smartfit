@@ -13,9 +13,11 @@ import {
     updatepassword,
     resetForgottenPassword,
     getSecurityDashboard,
+    exportMyData,
+    deleteMyAccount,
 } from "../controllers/admin.controller.js";
  // added update password & reset forgot password ?
-import { sendForgetPasswordOtp, verifyForgotPasswordOtp } from "../controllers/otp.controller.js";
+import { sendotp, sendForgetPasswordOtp, verifyForgotPasswordOtp } from "../controllers/otp.controller.js";
 import { verifyTempjwt } from "../middlewares/verifytempjwt.middleware.js";
 import { apiResponse } from "../utils/apiResponse.js";
 
@@ -112,6 +114,9 @@ router.get("/get-profile", adminOnly, getprofiledetails);
 router.get("/get-admin", adminOnly, getCurrentAdmin);
 router.get("/security-dashboard", adminOnly, getSecurityDashboard);
 router.patch("/update-password", adminOnly, updatepassword);
+router.get("/export-data", profileLimiter, adminOnly, exportMyData);
+router.post("/delete-account/send-otp", otpLimiter, adminOnly, sendotp);
+router.delete("/delete-account", profileLimiter, adminOnly, deleteMyAccount);
 // update password routes  added
 
 // Forgot password (public — rate limited in otp.controller.js)

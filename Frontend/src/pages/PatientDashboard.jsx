@@ -58,7 +58,7 @@ const getLabDepartment = (lab) => {
 export default function PatientDashboard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { profile, loading: profileLoading } = useSelector((state) => state.patient || {});
+  const { profile } = useSelector((state) => state.patient || {});
   const { appointments = [], loading: appointmentLoading } = useSelector((state) => state.appointment || {});
   const { labTests = [], loading: labLoading } = useSelector((state) => state.labtest || {});
 
@@ -81,15 +81,13 @@ export default function PatientDashboard() {
   const left = daysLeft(nextAppointment?.appointmentdate);
   const recentLabs = labTests.slice(0, 3);
 
-  if ((profileLoading && !profile) || appointmentLoading || labLoading) {
-    return (
-      <PatientPortalLayout title="Dashboard" subtitle="Your health status at a glance">
-        <div className="flex min-h-[50vh] items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
-        </div>
-      </PatientPortalLayout>
-    );
-  }
+  // Localized, per-section loading: only true on each section's very first
+  // load (no data yet) — once any data has arrived, that section keeps
+  // showing it while a background refresh runs, instead of flickering back
+  // to a spinner. The page shell itself (header, layout) never waits on any
+  // of this.
+  const showAppointmentSkeleton = appointmentLoading && appointments.length === 0;
+  const showLabSkeleton = labLoading && labTests.length === 0;
 
   return (
     <PatientPortalLayout showHeader={false}>
@@ -120,7 +118,11 @@ export default function PatientDashboard() {
 
         <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
           <div className="rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
-            {nextAppointment ? (
+            {showAppointmentSkeleton ? (
+              <div className="flex min-h-80 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+              </div>
+            ) : nextAppointment ? (
               <div className="grid gap-8 lg:grid-cols-[1fr_240px] lg:items-center">
                 <div>
                   <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-5 py-3 text-sm font-extrabold uppercase tracking-[0.16em] text-emerald-700">
@@ -213,7 +215,11 @@ export default function PatientDashboard() {
               </button>
             </div>
 
-            {recentLabs.length ? (
+            {showLabSkeleton ? (
+              <div className="flex min-h-40 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+              </div>
+            ) : recentLabs.length ? (
               <div className="space-y-5">
                 {recentLabs.map((lab, index) => {
                   const status = getLabStatus(lab);

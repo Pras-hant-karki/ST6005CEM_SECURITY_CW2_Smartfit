@@ -12,6 +12,26 @@ const getApiError = (err) => {
     return { message: err.message || "Something went wrong" };
 };
 
+// When a request uses responseType: "blob" (PDF export), a JSON error
+// response from the backend also arrives as a Blob instead of parsed JSON —
+// this reads it back out so error messages still surface normally.
+const getBlobApiError = async (err) => {
+    const data = err.response?.data;
+    if (data instanceof Blob && data.type === "application/json") {
+        try {
+            return JSON.parse(await data.text());
+        } catch {
+            // fall through to the generic handler below
+        }
+    }
+    return getApiError(err);
+};
+
+const getFilenameFromDisposition = (disposition, fallback = "smartfit-data-export.pdf") => {
+    const match = disposition?.match(/filename="?([^";]+)"?/);
+    return match ? match[1] : fallback;
+};
+
 export const registerPatient = createAsyncThunk("patient/register", async (formData, { rejectWithValue }) => {
     try {
         const res = await api.post("/register", formData);
@@ -174,18 +194,29 @@ export const getdoctorbydepartment = createAsyncThunk("patient/getdoctorbydepart
     }
 });
 
+// The backend now streams a PDF, not JSON — responseType: "blob" is required
+// so axios hands back raw binary data instead of trying to parse it as text.
 export const exportMyData = createAsyncThunk("patient/exportMyData", async (_, { rejectWithValue }) => {
     try {
-        const res = await api.get("/export-data");
+        const res = await api.get("/export-data", { responseType: "blob" });
+        return { blob: res.data, filename: getFilenameFromDisposition(res.headers["content-disposition"]) };
+    } catch (err) {
+        return rejectWithValue(await getBlobApiError(err));
+    }
+});
+
+export const sendDeleteAccountOtp = createAsyncThunk("patient/sendDeleteAccountOtp", async (_, { rejectWithValue }) => {
+    try {
+        const res = await api.post("/delete-account/send-otp");
         return res.data.data;
     } catch (err) {
         return rejectWithValue(getApiError(err));
     }
 });
 
-export const deleteMyAccount = createAsyncThunk("patient/deleteMyAccount", async (password, { rejectWithValue }) => {
+export const deleteMyAccount = createAsyncThunk("patient/deleteMyAccount", async ({ password, otp }, { rejectWithValue }) => {
     try {
-        const res = await api.delete("/delete-account", { data: { password } });
+        const res = await api.delete("/delete-account", { data: { password, otp } });
         return res.data;
     } catch (err) {
         return rejectWithValue(getApiError(err));

@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
 import './index.css'
@@ -6,34 +6,38 @@ import App from './App.jsx'
 import store from './store/store.js'
 import { Provider } from 'react-redux'
 
-import BookAppointment from "./pages/BookAppointment"
-import DepartmentList from "./pages/DepartmentList"
-import DoctorsList from "./pages/DoctorsList"
-import Home from "./pages/Home"
-import About from "./pages/About"
-import Login from './pages/login'
+// AuthLayout is a thin wrapper mounted on nearly every route, so it stays a
+// regular import — everything else is route content and is only fetched
+// when its route actually matches, keeping the initial JS payload small.
 import AuthLayout from './components/custom/authLayout'
-import DoctorProfile from './pages/doctorProfile'
-import AllAppointments from './pages/AllAppointments'
-import AppointmentDetails from './pages/AppointmentDetails'
-import UpdateAppointment from './pages/UpdateAppointment'
-import Register from './pages/register'
-import UpdateProfile from './pages/UpdateProfile'
-import PatientProfile from './pages/patientprofile'
-import PatientDashboard from './pages/PatientDashboard'
-import VerifyOtp from './pages/VerifyOtp'
-import ResetPassword from './pages/ResetPassword'
-import SendOtp from './pages/SendOtp'
-import AllPrescriptions from './pages/AllPrescriptions'
-import PrescriptionDetails from './pages/PrescriptionDetails'
-import AllLabTests from './pages/AllLabTests'
-import LabTestDetails from './pages/LabTestDetails'
-import MedicalRecords from './pages/MedicalRecords'
-import BillingHistory from './pages/BillingHistory'
-import PaymentSuccess from './pages/PaymentSuccess'
-import PaymentCancel from './pages/PaymentCancel'
-import Privacy from './pages/Privacy'
-import Terms from './pages/Terms'
+
+const BookAppointment = lazy(() => import("./pages/BookAppointment"))
+const DepartmentList = lazy(() => import("./pages/DepartmentList"))
+const DoctorsList = lazy(() => import("./pages/DoctorsList"))
+const Home = lazy(() => import("./pages/Home"))
+const About = lazy(() => import("./pages/About"))
+const Login = lazy(() => import('./pages/login'))
+const DoctorProfile = lazy(() => import('./pages/doctorProfile'))
+const AllAppointments = lazy(() => import('./pages/AllAppointments'))
+const AppointmentDetails = lazy(() => import('./pages/AppointmentDetails'))
+const UpdateAppointment = lazy(() => import('./pages/UpdateAppointment'))
+const Register = lazy(() => import('./pages/register'))
+const UpdateProfile = lazy(() => import('./pages/UpdateProfile'))
+const PatientProfile = lazy(() => import('./pages/patientprofile'))
+const PatientDashboard = lazy(() => import('./pages/PatientDashboard'))
+const VerifyOtp = lazy(() => import('./pages/VerifyOtp'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const SendOtp = lazy(() => import('./pages/SendOtp'))
+const AllPrescriptions = lazy(() => import('./pages/AllPrescriptions'))
+const PrescriptionDetails = lazy(() => import('./pages/PrescriptionDetails'))
+const AllLabTests = lazy(() => import('./pages/AllLabTests'))
+const LabTestDetails = lazy(() => import('./pages/LabTestDetails'))
+const MedicalRecords = lazy(() => import('./pages/MedicalRecords'))
+const BillingHistory = lazy(() => import('./pages/BillingHistory'))
+const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'))
+const PaymentCancel = lazy(() => import('./pages/PaymentCancel'))
+const Privacy = lazy(() => import('./pages/Privacy'))
+const Terms = lazy(() => import('./pages/Terms'))
 
 const router = createBrowserRouter([
   {

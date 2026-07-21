@@ -80,6 +80,19 @@ const patientSchema = new Schema({
         default: [],
         select: false,
     },
+    // Soft delete: the account is disabled and PII is scrubbed, but the
+    // document itself is kept so Appointment/Payment/Labtest references to
+    // it (required ObjectId refs) never dangle. See deleteMyAccount in
+    // patient.controller.js for the full rationale.
+    isDeleted: {
+        type: Boolean,
+        default: false,
+        index: true,
+    },
+    deletedAt: {
+        type: Date,
+        default: null,
+    },
 }, { timestamps: true })
 
 

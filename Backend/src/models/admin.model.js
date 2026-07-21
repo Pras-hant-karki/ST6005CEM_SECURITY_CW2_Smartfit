@@ -32,6 +32,12 @@ const adminSchema = new Schema(
     lockedUntil: { type: Date, default: null, select: false },
     passwordChangedAt: { type: Date, select: false },
     passwordHistory: { type: [String], default: [], select: false },
+    // Soft delete: kept as a tombstone document (never hard-deleted) so any
+    // AuditLog/history referencing this admin's id stays meaningful. See
+    // deleteMyAccount in admin.controller.js — blocked outright if this
+    // would remove the last remaining admin.
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -58,8 +58,14 @@ const doctorSchema = new Schema(
     lockedUntil: { type: Date, default: null, select: false },
     
     passwordChangedAt: { type: Date, select: false },
-    passwordHistory: { type: [String], default: [], select: false }, 
+    passwordHistory: { type: [String], default: [], select: false },
     isApproved: { type: Boolean, default: false }, // Admin approval needed for doctor accounts
+    // Soft delete: the account is disabled and PII is scrubbed, but the
+    // document itself is kept so Appointment/Payment/Labtest references to
+    // it (required ObjectId refs) never dangle. See deleteMyAccount in
+    // doctor.controller.js for the full rationale.
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

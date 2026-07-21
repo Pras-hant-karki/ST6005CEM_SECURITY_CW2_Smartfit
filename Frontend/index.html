@@ -3,10 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://js.hcaptcha.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; font-src 'self' data:; frame-src https://*.hcaptcha.com; connect-src 'self' http: https: ws: wss:; object-src 'none'; base-uri 'self';" />
-    <link href="/src/index.css" rel="stylesheet">
+
+    <!-- Content Security Policy (CSP) -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' https://js.hcaptcha.com;
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob: http: https:;
+        font-src 'self' data:;
+        connect-src 'self' http: https: ws: wss: https://hcaptcha.com https://*.hcaptcha.com;
+        frame-src https://hcaptcha.com https://*.hcaptcha.com;
+        object-src 'none';
+        base-uri 'self';
+      "
+    />
+
+    <link href="/src/index.css" rel="stylesheet" />
     <title>SmartFit Hospital</title>
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
