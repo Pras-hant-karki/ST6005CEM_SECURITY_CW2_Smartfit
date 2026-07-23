@@ -43,6 +43,18 @@ export default function Navbar() {
     return location.pathname.startsWith(slug);
   };
 
+  // "Book Appointment" browses doctors first (Meet Our Specialists on the
+  // homepage) rather than jumping straight to registration — actually
+  // booking a slot still requires login, enforced later by AuthLayout on
+  // the /appointments/book-appointment/:doctorid route itself.
+  const goToSpecialists = () => {
+    if (location.pathname === "/") {
+      document.getElementById("specialists")?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      navigate("/#specialists");
+    }
+  };
+
   return (
     <header className={`sticky top-0 z-50 transition-all duration-300 ${
       scrolled ? "bg-white/80 backdrop-blur-xl shadow-sm border-b border-gray-100/50" : "bg-white border-b border-gray-100"
@@ -103,7 +115,7 @@ export default function Navbar() {
             ) : (
               <>
                 <button onClick={() => navigate("/login")} className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors tracking-wide">LOGIN</button>
-                <Button onClick={() => navigate("/register")} className="bg-[#02B833] hover:bg-[#029E2C] text-white rounded-full px-8 h-11 font-medium tracking-wide shadow-lg shadow-[#02B833]/25 transition-all hover:shadow-xl">BOOK APPOINTMENT</Button>
+                <Button onClick={goToSpecialists} className="bg-[#02B833] hover:bg-[#029E2C] text-white rounded-full px-8 h-11 font-medium tracking-wide shadow-lg shadow-[#02B833]/25 transition-all hover:shadow-xl">BOOK APPOINTMENT</Button>
               </>
             )}
           </div>
@@ -149,7 +161,7 @@ export default function Navbar() {
                   ) : (
                     <>
                       <button className="w-full py-3.5 rounded-xl border border-black bg-white text-sm font-medium text-black hover:bg-gray-50 transition-all" onClick={() => { navigate("/login"); setMobileMenuOpen(false); }}>LOGIN</button>
-                      <button className="w-full py-3.5 rounded-xl bg-[#02B833] text-white text-sm font-medium hover:bg-[#029E2C] transition-all shadow-lg shadow-[#02B833]/25" onClick={() => { navigate("/register"); setMobileMenuOpen(false); }}>BOOK APPOINTMENT</button>
+                      <button className="w-full py-3.5 rounded-xl bg-[#02B833] text-white text-sm font-medium hover:bg-[#029E2C] transition-all shadow-lg shadow-[#02B833]/25" onClick={() => { goToSpecialists(); setMobileMenuOpen(false); }}>BOOK APPOINTMENT</button>
                     </>
                   )}
                 </div>

@@ -21,23 +21,10 @@ const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const isSecureContext = isProduction || process.env.HTTPS_ENABLED === "true";
 
-// Rejects IPs that have repeatedly triggered account lockouts, before any
-// other middleware runs.
+
 app.use(ipBlockMiddleware);
 
-// ---------------------------------------------------------------------------
-// API documentation (Swagger UI)
-//
-// Mounted before the strict API-wide CSP below, and given its own
-// permissive one, because Swagger UI's page needs to run its own bundled
-// JavaScript and inline styles — the API's default script-src 'none' would
-// otherwise leave the docs page blank. This only relaxes the policy for
-// /api-docs itself; every other route is unaffected and keeps the strict
-// policy untouched. Read-only (GET) throughout, so it needs no CSRF
-// exemption and no auth — the spec only documents the public API surface,
-// it doesn't expose any data itself.
-// ---------------------------------------------------------------------------
-// Raw spec, for importing into Postman/Insomnia or other OpenAPI tooling.
+
 app.get("/api-docs.json", (req, res) => res.json(swaggerSpec));
 
 app.use(
@@ -172,9 +159,6 @@ app.use(
 
 app.use(cookieparser());
 
-// Raw body required (not express.json()) — Stripe signature verification
-// needs the original, unparsed request bytes. INTERNAL endpoint — see the
-// Swagger-exclusion note on stripeWebhook in payment.controller.js.
 app.post("/api/v1/payment/webhook", express.raw({ type: "application/json" }), stripeWebhook);
 
 app.use(express.json({ limit: "20kb" }));
@@ -195,10 +179,7 @@ app.use((req, _res, next) => {
     next();
 });
 
-// Context-aware sanitization (XSS/control-character defense) — see
-// middlewares/sanitize.middleware.js. Distinct from, and runs after, the
-// NoSQL-operator stripping above: that guards query *structure*, this
-// guards string *content*, and neither duplicates the other.
+
 app.use(sanitizeInput);
 
 app.use(ensureCsrfCookie);

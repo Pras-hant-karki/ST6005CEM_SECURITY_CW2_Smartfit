@@ -168,10 +168,6 @@ const loginPatient = asyncHandler(async (req, res) => {
     }).select("+password +loginAttempts +lockedUntil +passwordChangedAt");
 
     if (!patient || patient.isDeleted) throw new apiError(401, "Invalid credentials");
-    // when we return the same status and message as a wrong password means
-    // a stranger can no longer tell whether this email is registered
-    // (a deleted account gets the exact same response, for the same reason —
-    // it must not be distinguishable from "no such account")
 
 
     // Account lockout check
@@ -213,8 +209,6 @@ const loginPatient = asyncHandler(async (req, res) => {
                 endpoint: "/patient/login",
                 description: `Patient account locked after ${MAX_LOGIN_ATTEMPTS} consecutive failed login attempts.`,
             });
-            // An IP that causes repeated account lockouts (not just repeated
-            // failed attempts on one account) gets temporarily blocked outright.
             if (trackLockout(req.ip)) {
                 blockIp(req.ip);
                 reportSecurityEvent({
@@ -229,9 +223,6 @@ const loginPatient = asyncHandler(async (req, res) => {
         await patient.save({ validateBeforeSave: false });
         logAudit({ userId: patient._id, userRole: "patient", action: "login_failed", resource: "patient", ip: req.ip, result: "failure", metadata: { reason: "invalid_password" } });
                 throw new apiError(401, "Invalid credentials");
-        // matching wording on both failure paths removes the last remaining clue 
-        // (the message text itself) that could distinguish the two cases
-
         
     }
 
@@ -318,8 +309,6 @@ const verifyLoginMfa = asyncHandler(async (req, res) => {
 
     logAudit({ userId: patient._id, userRole: "patient", action: "login_success", resource: "patient", ip: req.ip, result: "success" });
 
-    // Rotate the CSRF token on login — the anonymous token issued before
-    // authentication is discarded in favor of one tied to this new session.
     issueCsrfCookie(res);
 
     return res
@@ -355,12 +344,8 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
 
     let decoded;
     try {
-        // jwt.verify throws on an invalid/expired token rather than returning
-        // null, so the failure case is handled in the catch block below.
         decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
     } catch {
-        // Expired/invalid refresh token means this session is over — the
-        // CSRF token paired with it should die with it too.
         clearCsrfCookie(res);
         throw new apiError(401, "Invalid or expired refresh token");
     }
@@ -383,8 +368,6 @@ const accesstokenrenewal = asyncHandler(async (req, res) => {
         throw new apiError(401, "Refresh token mismatch or already used");
     }
 
-    // Session-to-device binding: a refresh token replayed from a different
-    // device/browser than the one it was issued to is rejected outright.
     const currentUserAgent = req.headers["user-agent"];
     if (patient.lastUserAgent && currentUserAgent && patient.lastUserAgent !== currentUserAgent) {
         patient.refreshtoken = null;

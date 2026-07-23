@@ -70,8 +70,6 @@ const otpLimiter = rateLimit({
     },
 });
 
-// Tighter than the global limiter for profile writes — sensitive, not
-// auth-adjacent.
 const profileLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: process.env.NODE_ENV === "production" ? 20 : 300,
@@ -83,9 +81,6 @@ const profileLimiter = rateLimit({
 
 const adminOnly = [verifyAuth("admin"), requireRole("admin")];
 
-// INTERNAL — raw private-file server (verification documents), not a
-// resource with its own request/response schema. Exclude from public
-// Swagger documentation, or document separately under an "internal/files" tag.
 router.get("/documents/:role/:doctype/:filename", adminOnly, (req, res) => {
     const filePath = path.join(process.cwd(), "private", "uploads", req.params.role, req.params.doctype, req.params.filename);
     res.sendFile(filePath, (err) => {

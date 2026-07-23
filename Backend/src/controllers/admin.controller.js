@@ -208,22 +208,6 @@ const loginadmin = asyncHandler(async (req, res) => {
     admin.lockedUntil = null;
     await admin.save({ validateBeforeSave: false });
 
-    // Dev-only MFA bypass for a single named admin account (explicitly requested).
-    if (admin.adminusername === "prashantadmin") {
-        const { accesstoken, refreshtoken } = await generateaccesstokenandrefreshtoken(admin._id, req.headers["user-agent"]);
-        const loggedinadmin = await Admin.findById(admin._id).select("-password -refreshtoken -passwordHistory");
-
-        logAudit({ userId: admin._id, userRole: "admin", action: "login_success", resource: "admin", ip: req.ip, result: "success" });
-
-        issueCsrfCookie(res);
-
-        return res
-            .status(200)
-            .cookie("accesstoken", accesstoken, ACCESS_COOKIE_OPTIONS)
-            .cookie("refreshtoken", refreshtoken, REFRESH_COOKIE_OPTIONS)
-            .json(new apiResponse(200, { user: loggedinadmin }, "Admin logged in successfully"));
-    }
-
     if (admin.passwordChangedAt) {
         const daysSinceChange = (Date.now() - admin.passwordChangedAt) / (1000 * 60 * 60 * 24);
         if (daysSinceChange > PASSWORD_EXPIRY_DAYS) {

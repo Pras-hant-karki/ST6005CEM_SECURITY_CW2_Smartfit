@@ -48,9 +48,6 @@ const verifyAuth = (desiredRole) => asyncHandler(async (req, res, next) => {
     throw new apiError(401, "Invalid role");
   }
 
-  // A still-unexpired access token issued before a since-completed account
-  // deletion must not keep working — the token's signature is still valid,
-  // but the account behind it no longer is.
   if (user.isDeleted) throw new apiError(401, "This account has been deleted");
 
   req.userRole = decoded.role;

@@ -1,6 +1,7 @@
 import { StrictMode, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
+import { Video, Package, Briefcase, Siren, ScrollText } from 'lucide-react'
 import './index.css'
 import App from './App.jsx'
 import store from './store/store.js'
@@ -38,6 +39,7 @@ const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'))
 const PaymentCancel = lazy(() => import('./pages/PaymentCancel'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
+const ComingSoon = lazy(() => import('./pages/ComingSoon'))
 
 const router = createBrowserRouter([
   {
@@ -79,6 +81,26 @@ const router = createBrowserRouter([
       {
         path: '/terms',
         element: <Terms />
+      },
+      {
+        path: '/virtual-consultations',
+        element: <ComingSoon icon={Video} title="Virtual Consultations" description="Video appointments with our specialists, from wherever you are. We're putting the finishing touches on this — check back soon." />
+      },
+      {
+        path: '/medical-packages',
+        element: <ComingSoon icon={Package} title="Medical Packages" description="Bundled health checkup and treatment packages tailored to your needs. This page is on its way." />
+      },
+      {
+        path: '/careers',
+        element: <ComingSoon icon={Briefcase} title="Careers at SmartFit" description="Join our team of healthcare professionals. Open positions will be listed here soon." />
+      },
+      {
+        path: '/emergency-services',
+        element: <ComingSoon icon={Siren} title="Emergency Services" description="24/7 emergency care information and rapid-response contact details are being finalized." />
+      },
+      {
+        path: '/patient-rights',
+        element: <ComingSoon icon={ScrollText} title="Patient Rights" description="A full statement of your rights and responsibilities as a SmartFit patient is coming soon." />
       },
       {
         path: '/appointments/book-appointment/:doctorid',

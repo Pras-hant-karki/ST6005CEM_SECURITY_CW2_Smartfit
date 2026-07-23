@@ -236,6 +236,9 @@ const Register = () => {
                     })}
                     className={errors.email ? "border-red-500" : ""}
                   />
+                  <p className="text-xs text-gray-500">
+                    Must be a valid email address and contain @ (e.g. name@example.com)
+                  </p>
                   {errors.email && (
                     <p className="text-red-500 text-xs flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
@@ -303,6 +306,9 @@ const Register = () => {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <p className="text-xs text-gray-500">
+                    At least 12 characters, with an uppercase letter, a lowercase letter, a number, and a special character (!@#$%^&* etc.)
+                  </p>
                   <PasswordStrengthMeter password={password} />
                   {errors.password && (
                     <p className="text-red-500 text-xs flex items-center gap-1">

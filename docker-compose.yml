@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     volumes:
       - mongo_data:/data/db
-    # Not exposed to the host in production; accessible only within the Docker network
     expose:
       - "27017"
 
@@ -19,7 +18,7 @@ services:
       MONGODB_URL: mongodb://mongodb:27017
       DB_NAME: smartfit
       PORT: 8000
-      # Secrets must be supplied via a real .env or Docker secrets in production
+      
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
       ACCESS_TOKEN_EXPIRY: ${ACCESS_TOKEN_EXPIRY:-1d}

@@ -50,7 +50,7 @@ export default function Specialists() {
   }, [dispatch]);
 
   return (
-    <section className="py-16 lg:py-20 bg-white relative">
+    <section id="specialists" className="py-16 lg:py-20 bg-white relative">
       <div className="absolute -top-20 right-0 w-[500px] h-[500px] bg-emerald-50/30 rounded-full blur-3xl" />
       <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-teal-50/20 rounded-full blur-3xl" />
 

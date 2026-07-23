@@ -2,12 +2,18 @@ import { MapPin, Phone, Share2, Mail } from "lucide-react";
 import { Link } from "react-router-dom";
 import logo from "../../assets/logo.png";
 
-const quickLinks = ["Departments", "Featured Doctors", "Virtual Consultations", "Medical Packages", "Careers"];
+const quickLinks = [
+  { label: "Departments", to: "/departments" },
+  { label: "Featured Doctors", to: "/doctors" },
+  { label: "Virtual Consultations", to: "/virtual-consultations" },
+  { label: "Medical Packages", to: "/medical-packages" },
+  { label: "Careers", to: "/careers" },
+];
 const policies = [
   { label: "Privacy Policy", to: "/privacy" },
   { label: "Terms of Service", to: "/terms" },
-  { label: "Emergency Services", to: null },
-  { label: "Patient Rights", to: null },
+  { label: "Emergency Services", to: "/emergency-services" },
+  { label: "Patient Rights", to: "/patient-rights" },
 ];
 
 export default function Footer() {
@@ -37,8 +43,12 @@ export default function Footer() {
             <h3 className="text-sm font-bold text-emerald-600 uppercase tracking-wider">Quick Links</h3>
             <ul className="space-y-3">
               {quickLinks.map((link) => (
-                <li key={link}>
-                  <a href="#" className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link}</a>
+                <li key={link.label}>
+                  {link.to ? (
+                    <Link to={link.to} className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link.label}</Link>
+                  ) : (
+                    <a href="#" className="text-gray-500 text-sm hover:text-emerald-600 transition-colors">{link.label}</a>
+                  )}
                 </li>
               ))}
             </ul>
@@ -86,7 +96,7 @@ export default function Footer() {
             <p className="text-gray-400 text-sm">© 2024 SMART Medical Institute. All rights reserved.</p>
             <div className="flex items-center gap-6">
               {["LinkedIn", "Twitter", "Facebook"].map((social) => (
-                <a key={social} href="#" className="text-gray-400 text-sm hover:text-emerald-600 transition-colors">{social}</a>
+                <button key={social} type="button" className="text-gray-400 text-sm hover:text-emerald-600 transition-colors">{social}</button>
               ))}
             </div>
           </div>
